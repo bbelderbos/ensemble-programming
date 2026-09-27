@@ -3,13 +3,11 @@ import json
 import uuid
 from collections import defaultdict
 
-import httpx
 import redis
 from decouple import config
 from fastapi import (
     FastAPI,
     Form,
-    HTTPException,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -21,7 +19,6 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 DATABASE_URL = config("DATABASE_URL")
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379")
-PISTON_API = "https://emkc.org/api/v2/piston/execute"
 
 engine = create_engine(DATABASE_URL, echo=True)
 templates = Jinja2Templates(directory="templates")
@@ -104,27 +101,6 @@ async def session_page(request: Request, session_id: str):
     return templates.TemplateResponse(
         "session.html", {"request": request, "session_id": session_id}
     )
-
-
-@app.post("/run-code")
-async def run_code(code: str = Form(...)):
-    """Executes the submitted code using Piston API."""
-    payload = {
-        "language": "python",
-        "version": "3.10.0",
-        "files": [{"content": code}],
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.post(PISTON_API, json=payload)
-        if response.status_code != 200:
-            raise HTTPException(status_code=500, detail="Code execution failed")
-        result = response.json()
-
-        stdout = result.get("run", {}).get("stdout", "")
-        stderr = result.get("run", {}).get("stderr", "")
-        output = result.get("run", {}).get("output", "")
-
-        return {"stdout": stdout, "stderr": stderr, "output": output}
 
 
 @app.websocket("/ws/{session_id}")
@@ -219,7 +195,6 @@ async def websocket_users(session_id: str, websocket: WebSocket):
                     users = list(in_memory_users.get(session_id, set()))
 
                 for connection in manager.active_connections.get(session_id, []):
-                    print("sending user list", users)
                     await connection.send_text(
                         json.dumps({"type": "user_list", "users": users})
                     )

@@ -19,13 +19,9 @@
       <textarea id="code-editor"></textarea>
       <p id="typing-indicator" class="text-sm text-gray-500 mt-2"></p>
 
-      <form hx-post="/run-code/" hx-target="#output" hx-trigger="submit">
-        <input type="hidden" name="code" id="code-input">
-        <button type="submit" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md"
-            onclick="document.getElementById('code-input').value = editor.getValue()">
-            Run Code
-        </button>
-      </form>
+      <button id="run-button" onclick="runCode()" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md">
+          Run Code
+      </button>
 
       <pre id="output" class="mt-4 p-4 rounded-md"></pre>
 
@@ -33,7 +29,7 @@
 
     <!-- Right Column: Role Rotation & Timer -->
     <div class="bg-white shadow-md p-6 rounded-lg">
-        <h2 class="text-xl font-semibold mb-4">Role & Timer</h2>
+        <h2 class="text-xl font-semibold mb-4">Timer & Rotation</h2>
         <p id="timer" class="text-lg mt-2">Time Remaining: <span id="time-remaining" class="text-red-600"></span></p>
 
         <h2 class="text-lg font-semibold mt-4">Active Users:</h2>
@@ -42,6 +38,7 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
 <script>
   let username = "";
   let session_id = "{{ session_id }}";
@@ -126,17 +123,31 @@
       }
   });
 
-  document.body.addEventListener("htmx:afterRequest", function(evt) {
-      if (evt.detail.target.id === "output") {
-          const response = evt.detail.xhr.responseText;
-          try {
-              const parsed = JSON.parse(response);
-              document.getElementById("output").innerText =
-                  "Stdout:\n" + parsed.stdout + "\n\nStderr:\n" + parsed.stderr;
-          } catch (error) {
-              document.getElementById("output").innerText = "Error parsing response";
-          }
+  // Code runs in each user's browser, so a runaway loop only freezes that tab
+  let pyodideReady = loadPyodide();
+
+  async function runCode() {
+      const output = document.getElementById("output");
+      const button = document.getElementById("run-button");
+      button.disabled = true;
+      output.innerText = "Running...";
+
+      const pyodide = await pyodideReady;
+      let stdout = "";
+      let stderr = "";
+      pyodide.setStdout({ batched: line => stdout += line + "\n" });
+      pyodide.setStderr({ batched: line => stderr += line + "\n" });
+
+      const freshGlobals = pyodide.globals.get("dict")();
+      try {
+          await pyodide.runPythonAsync(editor.getValue(), { globals: freshGlobals });
+      } catch (error) {
+          stderr += error.message;
+      } finally {
+          freshGlobals.destroy();
+          button.disabled = false;
       }
-  });
+      output.innerText = "Stdout:\n" + stdout + "\nStderr:\n" + stderr;
+  }
 </script>
 {% endblock %}
