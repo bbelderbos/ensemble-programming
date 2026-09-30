@@ -61,10 +61,13 @@ class ConnectionManager:
         if not self.active_connections[session_id]:
             del self.active_connections[session_id]
 
-    async def broadcast(self, session_id: str, message: str):
+    async def broadcast(
+        self, session_id: str, message: str, exclude: WebSocket | None = None
+    ):
         """Send message to all connected clients in a session."""
         for connection in self.active_connections.get(session_id, []):
-            await connection.send_text(message)
+            if connection is not exclude:
+                await connection.send_text(message)
 
 
 manager = ConnectionManager()
@@ -122,6 +125,8 @@ async def websocket_endpoint(session_id: str, websocket: WebSocket):
                 await manager.broadcast(
                     session_id,
                     json.dumps({"type": "code", "content": message["content"]}),
+                    # A stale echo would overwrite the sender's newer edits
+                    exclude=websocket,
                 )
 
             elif message.get("type") == "typing":
