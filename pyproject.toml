@@ -17,9 +17,11 @@ dependencies = [
 dev = [
     "fakeredis>=2.38.0",
     "pytest>=9.1.1",
+    "pytest-playwright>=0.9.0",
     "pytest-timeout>=2.4.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-timeout = 10
+timeout = 90
+markers = ["e2e: drives the app in a real browser"]
