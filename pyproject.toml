@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "fakeredis>=2.38.0",
     "pytest>=9.1.1",
 ]
 
