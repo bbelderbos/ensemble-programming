@@ -12,8 +12,8 @@
       <input type="text" id="username-input" class="border p-2 rounded w-full mt-2" onkeydown="if (event.key === 'Enter') setUsername()">
 
       <div class="mt-2">
-          <input type="checkbox" id="rotation-opt-in">
-          <label for="rotation-opt-in">Participate in rotation</label>
+          <input type="checkbox" id="rotation-opt-in" checked>
+          <label for="rotation-opt-in">Take part in the rotation (uncheck to just watch)</label>
       </div>
 
       <button onclick="setUsername()" class="bg-indigo-500 text-white px-4 py-2 mt-4 rounded-md">Join</button>
@@ -26,25 +26,39 @@
     <div class="bg-white shadow-md p-6 rounded-lg">
       <h2 class="text-xl font-semibold mb-4">Shared Code Editor</h2>
       <textarea id="code-editor"></textarea>
-      <p id="typing-indicator" class="text-sm text-gray-500 mt-2"></p>
+      <p class="text-sm mt-2"><span id="editor-status" class="font-medium"></span> <span id="typing-indicator" class="text-gray-500"></span></p>
 
       <button id="run-button" onclick="runCode()" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md">
         Run Code
       </button>
 
-      <pre id="output" class="mt-4 p-4 rounded-md"></pre>
+      <pre id="output" class="mt-4 p-4 rounded-md whitespace-pre-wrap break-words"></pre>
 
     </div>
 
     <!-- Right Column: Role Rotation & Timer -->
     <div class="bg-white shadow-md p-6 rounded-lg">
-      <h2 class="text-xl font-semibold mb-4">Role & Timer</h2>
-      <p class="text-lg font-medium">Driver: <span id="driver-name" class="text-indigo-600">Waiting...</span></p>
-      <p class="text-lg font-medium">Navigator: <span id="navigator-name" class="text-green-600">Waiting...</span></p>
-      <p id="timer" class="text-lg mt-2">Time Remaining: <span id="time-remaining" class="text-red-600"></span></p>
+      <h2 class="text-xl font-semibold mb-4">Rotation</h2>
 
-      <h3 class="text-lg font-semibold mt-4">Active Users:</h3>
-      <ul id="user-list" class="mt-2 text-indigo-600"></ul>
+      <div class="rounded-md bg-gray-50 p-4">
+        <p id="time-remaining" class="text-4xl font-mono font-semibold"></p>
+        <p id="segment-label" class="text-sm text-gray-600 mt-1"></p>
+        <button id="start-button" onclick="startSegment()" hidden class="bg-green-600 text-white font-semibold px-4 py-2 mt-3 rounded-md">
+          Start segment
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-1 text-lg">
+        <p>Driver: <span id="driver-name" class="font-medium text-indigo-600"></span></p>
+        <p>Navigator: <span id="navigator-name" class="font-medium text-green-600"></span></p>
+        <p>Timekeeper: <span id="timekeeper-name" class="font-medium text-amber-600"></span></p>
+      </div>
+
+      <h3 class="text-lg font-semibold mt-4">In rotation</h3>
+      <ol id="participant-list" class="list-decimal list-inside mt-1"></ol>
+
+      <h3 class="text-lg font-semibold mt-4">Watching</h3>
+      <ul id="observer-list" class="mt-1 text-gray-600"></ul>
     </div>
 
   </div>
@@ -56,8 +70,8 @@
 
     let wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
     let ws = new WebSocket(wsProtocol + location.host + "/ws/" + session_id);
-    let userWS = new WebSocket(wsProtocol + location.host + "/ws/users/" + session_id);
-    let timerWS = new WebSocket(wsProtocol + location.host + "/ws/timer/" + session_id);
+    let rotationWS = new WebSocket(wsProtocol + location.host + "/ws/rotation/" + session_id);
+    const rotationSeconds = {{ rotation_seconds }};
 
     function setUsername() {
         // update global username variable
@@ -66,7 +80,7 @@
 
         if (username) {
             document.getElementById("username-modal").style.display = "none";
-            userWS.send(JSON.stringify({ type: "join", username: username, participate: participate }));
+            rotationWS.send(JSON.stringify({ type: "join", username: username, participate: participate }));
         }
     }
 
@@ -86,34 +100,66 @@
         }
     };
 
-    timerWS.onmessage = function(event) {
-      let message = JSON.parse(event.data);
+    let rotation = null;
+    let deadline = null;
 
-      if (message.type === "timer") {
-          let seconds = message.time;
-          let minutes = Math.floor(seconds / 60);
-          let remainingSeconds = seconds % 60;
-          document.getElementById("time-remaining").textContent =
-              `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-      } else if (message.type === "roles") {
-          document.getElementById("driver-name").textContent = message.driver || "Waiting...";
-          document.getElementById("navigator-name").textContent = message.navigator || "Waiting...";
-      }
+    rotationWS.onmessage = function(event) {
+        rotation = JSON.parse(event.data);
+        deadline = rotation.remaining === null ? null : Date.now() + rotation.remaining * 1000;
+        renderRotation();
     };
 
-    userWS.onmessage = function(event) {
-      let message = JSON.parse(event.data);
+    function startSegment() {
+        rotationWS.send(JSON.stringify({ type: "start", username: username }));
+    }
 
-      if (message.type === "user_list") {
-        let userListHTML = message.users.join(", ");
-        document.getElementById("user-list").textContent = userListHTML;
+    function label(name) {
+        if (!name) return "—";
+        return name === username ? `${name} (you)` : name;
+    }
 
-        // Immediately update driver/navigator when users join
-        document.getElementById("driver-name").textContent = message.driver || "Waiting...";
-        document.getElementById("navigator-name").textContent = message.navigator || "Waiting...";
-      }
-    };
+    function listItems(names) {
+        return names.map(name => `<li>${label(name)}</li>`).join("") || "<li>—</li>";
+    }
 
+    function formatSeconds(seconds) {
+        return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, "0")}`;
+    }
+
+    function renderRotation() {
+        document.getElementById("driver-name").textContent = label(rotation.driver);
+        document.getElementById("navigator-name").textContent = label(rotation.navigator);
+        document.getElementById("timekeeper-name").textContent = label(rotation.timekeeper);
+        document.getElementById("participant-list").innerHTML = listItems(rotation.participants);
+        document.getElementById("observer-list").innerHTML = listItems(rotation.observers);
+
+        const driving = rotation.driver === username;
+        editor.setOption("readOnly", !driving);
+        document.getElementById("editor-status").textContent = driving
+            ? "You're driving."
+            : rotation.driver ? `${rotation.driver} is driving.` : "Nobody is driving yet.";
+
+        document.getElementById("start-button").hidden =
+            deadline !== null || rotation.timekeeper !== username;
+        renderClock();
+    }
+
+    function renderClock() {
+        if (!rotation) return;
+        const clock = document.getElementById("time-remaining");
+        const segmentLabel = document.getElementById("segment-label");
+        if (deadline === null) {
+            clock.textContent = formatSeconds(rotationSeconds);
+            segmentLabel.textContent = rotation.timekeeper
+                ? `Break: debrief, then ${label(rotation.timekeeper)} starts the next segment.`
+                : "Waiting for people to join the rotation.";
+        } else {
+            clock.textContent = formatSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+            segmentLabel.textContent = "Segment in progress. Roles rotate when time is up.";
+        }
+    }
+
+    setInterval(renderClock, 250);
 
     let editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
         mode: "python",
@@ -133,7 +179,7 @@
 
     editor.on("change", function(cm) {
         if (!isUpdatingFromServer) {
-            ws.send(JSON.stringify({ type: "code", content: editor.getValue() }));
+            ws.send(JSON.stringify({ type: "code", username: username, content: editor.getValue() }));
             ws.send(JSON.stringify({ type: "typing", username: username }));
 
             clearTimeout(typingTimeout);

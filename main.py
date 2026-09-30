@@ -1,6 +1,9 @@
 import asyncio
 import json
+import math
+import time
 import uuid
+from dataclasses import asdict
 
 import redis
 from decouple import config
@@ -16,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
+from rotation import Roles, assign_roles
+
 DATABASE_URL = config("DATABASE_URL")
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379")
 
@@ -24,7 +29,7 @@ templates = Jinja2Templates(directory="templates")
 
 redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
-ROTATION_TIME = 300
+ROTATION_SECONDS = config("ROTATION_SECONDS", default=300, cast=int)
 
 
 class SessionModel(SQLModel, table=True):
@@ -60,6 +65,9 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+rotation_manager = ConnectionManager()
+# Keeps a reference so running segment timers are not garbage collected
+segment_timers: dict[str, asyncio.Task] = {}
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -91,7 +99,12 @@ async def new_session(goal: str = Form(...)):
 async def session_page(request: Request, session_id: str):
     """Returns the session page with real-time code editor."""
     return templates.TemplateResponse(
-        "session.html", {"request": request, "session_id": session_id}
+        "session.html",
+        {
+            "request": request,
+            "session_id": session_id,
+            "rotation_seconds": ROTATION_SECONDS,
+        },
     )
 
 
@@ -106,6 +119,8 @@ async def websocket_endpoint(session_id: str, websocket: WebSocket):
             message = json.loads(data)
 
             if message.get("type") == "code":
+                if message.get("username") != current_roles(session_id).driver:
+                    continue
                 redis_client.set(f"session:{session_id}:code", message["content"])
 
                 await manager.broadcast(
@@ -133,141 +148,84 @@ async def websocket_endpoint(session_id: str, websocket: WebSocket):
         manager.disconnect(session_id, websocket)
 
 
-@app.websocket("/ws/timer/{session_id}")
-async def websocket_timer(session_id: str, websocket: WebSocket):
-    await manager.connect(session_id, websocket)
-
-    timer = int(redis_client.get(f"session:{session_id}:timer") or ROTATION_TIME)
-    current_driver = redis_client.get(f"session:{session_id}:driver")
-    current_navigator = redis_client.get(f"session:{session_id}:navigator")
-
-    try:
-        # 🔹 Immediately send current roles to the newly connected client
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "type": "roles",
-                    "driver": current_driver or "Waiting...",
-                    "navigator": current_navigator or "Waiting...",
-                }
-            )
-        )
-
-        while True:
-            await asyncio.sleep(1)
-
-            if timer > 0:
-                timer -= 1
-                redis_client.set(f"session:{session_id}:timer", timer)
-
-            await websocket.send_text(json.dumps({"type": "timer", "time": timer}))
-
-            if timer == 0:
-                users = [
-                    key
-                    for key, value in redis_client.hgetall(
-                        f"session:{session_id}:users"
-                    ).items()
-                    if json.loads(value)["active"]
-                ]
-
-                if users:
-                    users.sort()
-                    current_index = (
-                        users.index(current_driver) if current_driver in users else -1
-                    )
-
-                    current_driver = users[(current_index + 1) % len(users)]
-                    current_navigator = (
-                        users[(current_index + 2) % len(users)]
-                        if len(users) > 1
-                        else None
-                    )
-
-                    redis_client.set(f"session:{session_id}:driver", current_driver)
-                    redis_client.set(
-                        f"session:{session_id}:navigator", current_navigator or ""
-                    )
-
-                    await manager.broadcast(
-                        session_id,
-                        json.dumps(
-                            {
-                                "type": "roles",
-                                "driver": current_driver,
-                                "navigator": current_navigator,
-                            }
-                        ),
-                    )
-
-                timer = ROTATION_TIME
-                redis_client.set(f"session:{session_id}:timer", timer)
-
-    except WebSocketDisconnect:
-        print(f"🔴 WebSocket disconnected for session {session_id}")
-        manager.disconnect(session_id, websocket)
+def key(session_id: str, name: str) -> str:
+    return f"session:{session_id}:{name}"
 
 
-@app.websocket("/ws/users/{session_id}")
-async def websocket_users(session_id: str, websocket: WebSocket):
-    """Tracks users joining a session and broadcasts user list."""
-    await manager.connect(session_id, websocket)
+def current_roles(session_id: str) -> Roles:
+    participants = redis_client.lrange(key(session_id, "participants"), 0, -1)
+    segment = int(redis_client.get(key(session_id, "segment")) or 0)
+    return assign_roles(participants, segment)
+
+
+def rotation_state(session_id: str) -> dict:
+    ends_at = redis_client.get(key(session_id, "ends_at"))
+    return {
+        "type": "rotation",
+        "participants": redis_client.lrange(key(session_id, "participants"), 0, -1),
+        "observers": sorted(redis_client.smembers(key(session_id, "observers"))),
+        **asdict(current_roles(session_id)),
+        # None means the team is on a debrief break between segments
+        "remaining": math.ceil(float(ends_at) - time.time()) if ends_at else None,
+    }
+
+
+async def broadcast_rotation(session_id: str) -> None:
+    await rotation_manager.broadcast(session_id, json.dumps(rotation_state(session_id)))
+
+
+async def end_segment_after(session_id: str, seconds: float) -> None:
+    await asyncio.sleep(seconds)
+    redis_client.delete(key(session_id, "ends_at"))
+    redis_client.incr(key(session_id, "segment"))
+    await broadcast_rotation(session_id)
+
+
+def start_segment(session_id: str, username: str) -> bool:
+    running = redis_client.exists(key(session_id, "ends_at"))
+    if running or username != current_roles(session_id).timekeeper:
+        return False
+    redis_client.set(key(session_id, "ends_at"), time.time() + ROTATION_SECONDS)
+    segment_timers[session_id] = asyncio.create_task(
+        end_segment_after(session_id, ROTATION_SECONDS)
+    )
+    return True
+
+
+@app.websocket("/ws/rotation/{session_id}")
+async def websocket_rotation(session_id: str, websocket: WebSocket):
+    """Tracks who drives, navigates and keeps time, and runs the segment timer."""
+    await rotation_manager.connect(session_id, websocket)
+    username = None
 
     try:
         while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)
+            message = json.loads(await websocket.receive_text())
 
-            if message.get("type") == "join":
+            if message["type"] == "join":
                 username = message["username"]
-                participate = message.get("participate", False)
+                leave_rotation(session_id, username)
+                if message.get("participate"):
+                    redis_client.rpush(key(session_id, "participants"), username)
+                else:
+                    redis_client.sadd(key(session_id, "observers"), username)
 
-                redis_client.hset(
-                    f"session:{session_id}:users",
-                    username,
-                    json.dumps({"active": participate}),
-                )
+            elif message["type"] == "start":
+                if not start_segment(session_id, message["username"]):
+                    continue
 
-                users = [
-                    key
-                    for key, value in redis_client.hgetall(
-                        f"session:{session_id}:users"
-                    ).items()
-                    if json.loads(value)["active"]
-                ]
-
-                users.sort()
-                current_driver = redis_client.get(f"session:{session_id}:driver")
-                current_navigator = redis_client.get(f"session:{session_id}:navigator")
-
-                if users:
-                    if not current_driver or current_driver not in users:
-                        current_driver = users[0]
-                        redis_client.set(f"session:{session_id}:driver", current_driver)
-
-                    if len(users) > 1 and (
-                        not current_navigator or current_navigator not in users
-                    ):
-                        current_navigator = users[1]
-                        redis_client.set(
-                            f"session:{session_id}:navigator", current_navigator
-                        )
-
-                await manager.broadcast(
-                    session_id,
-                    json.dumps(
-                        {
-                            "type": "user_list",
-                            "users": users,
-                            "driver": current_driver,
-                            "navigator": current_navigator,
-                        }
-                    ),
-                )
+            await broadcast_rotation(session_id)
 
     except WebSocketDisconnect:
-        print(f"🔴 WebSocket disconnected for session {session_id}")
-        manager.disconnect(session_id, websocket)
+        rotation_manager.disconnect(session_id, websocket)
+        if username:
+            leave_rotation(session_id, username)
+            await broadcast_rotation(session_id)
+
+
+def leave_rotation(session_id: str, username: str) -> None:
+    redis_client.lrem(key(session_id, "participants"), 0, username)
+    redis_client.srem(key(session_id, "observers"), username)
 
 
 async def save_code_to_db():
