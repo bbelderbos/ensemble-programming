@@ -224,9 +224,9 @@ async def main() -> None:
         await caption("Only the driver types; everyone sees every keystroke")
         await alice.locator(".CodeMirror").click()
         await alice.keyboard.type(ALICE_CODE, delay=40)
-        assert (
-            await alice.evaluate("editor.getValue()") == ALICE_CODE
-        ), "typing scrambled"
+        assert await alice.evaluate("editor.getValue()") == ALICE_CODE, (
+            "typing scrambled"
+        )
 
         await caption("Bob runs it: Python executes in his browser via Pyodide")
         await warmup

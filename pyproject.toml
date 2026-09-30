@@ -19,9 +19,13 @@ dev = [
     "pytest>=9.1.1",
     "pytest-playwright>=0.9.0",
     "pytest-timeout>=2.4.0",
+    "ruff>=0.16.9",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 timeout = 90
 markers = ["e2e: drives the app in a real browser"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
