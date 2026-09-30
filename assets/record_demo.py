@@ -11,6 +11,8 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765"
 OUT = Path(tempfile.mkdtemp(prefix="demo-recording-"))
 VIDEO = Path(__file__).parent / "demo.mp4"
 SIZE = {"width": 720, "height": 840}
+# Must match the ROTATION_SECONDS the app runs with
+DEMO_SEGMENT = 18
 
 ALICE_CODE = """def fizzbuzz(n):
     if n % 15 == 0:
@@ -33,9 +35,6 @@ OVERLAY_JS = """
   badge.style.cssText = `position:fixed;top:10px;right:10px;z-index:9999;padding:6px 14px;
     border-radius:999px;background:${color};color:#fff;font:600 15px system-ui`;
   document.body.appendChild(badge);
-  const style = document.createElement('style');
-  style.textContent = '#output { white-space: pre-wrap; word-break: break-word; }';
-  document.head.appendChild(style);
 }
 """
 
@@ -193,39 +192,63 @@ async def main() -> None:
 
         await bob.goto(alice.url)
         await overlay(bob, "Bob", "#059669")
-        await caption("Bob opens the shared link and joins")
+        await caption("Bob opens the shared link and joins the rotation")
         await bob.locator("#username-input").press_sequentially("Bob", delay=90)
         await bob.wait_for_timeout(400)
         await bob.get_by_role("button", name="Join").click()
+        await bob.wait_for_timeout(1000)
+
+        # Carol only watches; her browser isn't recorded
+        carol = await (await browser.new_context()).new_page()
+        await carol.goto(alice.url)
+        await carol.locator("#username-input").fill("Carol")
+        await carol.locator("#rotation-opt-in").uncheck()
+        await carol.get_by_role("button", name="Join").click()
+        # First Pyodide run is slow, so warm up both browsers off camera time
+        warmup = asyncio.gather(
+            *(p.evaluate("pyodideReady.then(py => py.runPython('1'))") for p in both)
+        )
+        await caption("Carol sits in as an observer, outside the rotation")
         await bob.wait_for_timeout(1500)
-        await caption("Active users and the rotation timer stay in sync")
+
+        await caption("Alice drives, Bob navigates and keeps time")
         await bob.wait_for_timeout(1500)
+        await caption(
+            f"Bob starts the segment (5 min by default, {DEMO_SEGMENT}s for this demo)"
+        )
+        await bob.get_by_role("button", name="Start segment").click()
 
         for p in both:
             await plain_enter(p)
 
-        await caption("Alice drives: every keystroke streams to Bob's editor")
+        await caption("Only the driver types; everyone sees every keystroke")
         await alice.locator(".CodeMirror").click()
         await alice.keyboard.type(ALICE_CODE, delay=40)
         assert (
             await alice.evaluate("editor.getValue()") == ALICE_CODE
         ), "typing scrambled"
-        await alice.wait_for_timeout(1500)
 
         await caption("Bob runs it: Python executes in his browser via Pyodide")
-        await bob.evaluate("pyodideReady")  # already loading since page load
+        await warmup
         await bob.get_by_role("button", name="Run Code").click()
-        await bob.wait_for_timeout(3500)
+        await bob.wait_for_timeout(2500)
+        await caption("Missing Buzz! But time's nearly up…")
 
-        await caption("Missing Buzz! Bob takes the keyboard and adds it")
+        await bob.get_by_text("You're driving.").wait_for(timeout=30_000)
+        await caption("Time's up: roles rotate, Bob drives, Alice keeps time")
+        await bob.wait_for_timeout(1500)
+        await caption("Break to debrief, then Alice starts the next segment")
+        await alice.wait_for_timeout(1500)
+        await alice.get_by_role("button", name="Start segment").click()
+
+        await caption("Bob adds the Buzz branch")
         await bob.evaluate("editor.focus(); editor.setCursor({line: 5, ch: 0})")
         await bob.keyboard.type(BOB_FIX, delay=40)
-        await bob.wait_for_timeout(1500)
+        await bob.wait_for_timeout(1000)
         final = await alice.evaluate("editor.getValue()")
         assert "Buzz" in final.split("Fizz")[1], final
 
-        await caption("Alice sees the fix instantly and runs it")
-        await alice.evaluate("pyodideReady")
+        await caption("Alice runs the fix")
         await alice.get_by_role("button", name="Run Code").click()
         await alice.wait_for_timeout(3500)
         await caption("Ensemble Programming: one codebase, one team")
