@@ -13,3 +13,5 @@ def fake_redis(monkeypatch):
     monkeypatch.setattr(
         main, "redis_client", fakeredis.FakeRedis(decode_responses=True)
     )
+    # Timers from earlier tests belong to event loops that no longer run
+    monkeypatch.setattr(main, "segment_timers", {})

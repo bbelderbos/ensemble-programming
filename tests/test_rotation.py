@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -108,6 +109,70 @@ def test_leaving_removes_you_from_the_rotation():
         with client.websocket_connect("/ws/rotation/s1") as other:
             send(other, type="join", username="bob", participate=True)
             receive_state(ws)
+        state = receive_state(ws)
+
+    assert state["participants"] == ["ann"]
+
+
+def seed(session_id, participants, segment=0, ends_at=None):
+    main.redis_client.rpush(main.key(session_id, "participants"), *participants)
+    main.redis_client.set(main.key(session_id, "segment"), segment)
+    if ends_at is not None:
+        main.redis_client.set(main.key(session_id, "ends_at"), ends_at)
+
+
+def test_segment_that_expired_during_a_restart_ends_on_reconnect():
+    seed("s1", ["ann", "bob"], ends_at=time.time() - 60)
+
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        state = receive_state(ws)
+
+    assert state["remaining"] is None
+    assert state["driver"] == "bob"
+
+
+def test_segment_interrupted_by_a_restart_still_ends_on_time(monkeypatch):
+    seed("s1", ["ann", "bob"], ends_at=time.time() + 0.05)
+
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        state = receive_state(ws)
+
+    assert state["remaining"] is None
+    assert state["driver"] == "bob"
+
+
+def test_driver_leaving_hands_over_to_the_navigator():
+    seed("s1", ["ann", "bob", "cy"], segment=1)  # bob drives
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        send(ws, type="join", username="bob", participate=True)
+        receive_state(ws)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        send(ws, type="join", username="dee", participate=False)
+        state = receive_state(ws)
+
+    assert state["participants"] == ["ann", "cy"]
+    assert state["driver"] == "cy"
+
+
+@pytest.mark.parametrize("segment", [1, 4])  # bob drives in both
+def test_someone_leaving_does_not_change_the_current_driver(segment):
+    seed("s1", ["ann", "bob", "cy"], segment=segment)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        send(ws, type="join", username="ann", participate=True)
+        receive_state(ws)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        send(ws, type="join", username="dee", participate=False)
+        state = receive_state(ws)
+
+    assert state["participants"] == ["bob", "cy"]
+    assert state["driver"] == "bob"
+
+
+def test_rejoining_does_not_duplicate_you():
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        send(ws, type="join", username="ann", participate=True)
+        receive_state(ws)
+        send(ws, type="join", username="ann", participate=True)
         state = receive_state(ws)
 
     assert state["participants"] == ["ann"]

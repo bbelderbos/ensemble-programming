@@ -176,9 +176,25 @@ async def broadcast_rotation(session_id: str) -> None:
 
 async def end_segment_after(session_id: str, seconds: float) -> None:
     await asyncio.sleep(seconds)
-    redis_client.delete(key(session_id, "ends_at"))
-    redis_client.incr(key(session_id, "segment"))
-    await broadcast_rotation(session_id)
+    # Zero deletes means another path already ended this segment
+    if redis_client.delete(key(session_id, "ends_at")):
+        redis_client.incr(key(session_id, "segment"))
+        await broadcast_rotation(session_id)
+
+
+async def resume_segment(session_id: str) -> None:
+    """Re-arm a segment whose timer task was lost, e.g. by a server restart."""
+    ends_at = redis_client.get(key(session_id, "ends_at"))
+    timer = segment_timers.get(session_id)
+    if not ends_at or (timer and not timer.done()):
+        return
+    remaining = float(ends_at) - time.time()
+    if remaining <= 0:
+        await end_segment_after(session_id, 0)
+    else:
+        segment_timers[session_id] = asyncio.create_task(
+            end_segment_after(session_id, remaining)
+        )
 
 
 def start_segment(session_id: str, username: str) -> bool:
@@ -196,6 +212,7 @@ def start_segment(session_id: str, username: str) -> bool:
 async def websocket_rotation(session_id: str, websocket: WebSocket):
     """Tracks who drives, navigates and keeps time, and runs the segment timer."""
     await rotation_manager.connect(session_id, websocket)
+    await resume_segment(session_id)
     username = None
 
     try:
@@ -224,8 +241,23 @@ async def websocket_rotation(session_id: str, websocket: WebSocket):
 
 
 def leave_rotation(session_id: str, username: str) -> None:
-    redis_client.lrem(key(session_id, "participants"), 0, username)
     redis_client.srem(key(session_id, "observers"), username)
+    participants = redis_client.lrange(key(session_id, "participants"), 0, -1)
+    if username not in participants:
+        return
+
+    driver_seat = int(redis_client.get(key(session_id, "segment")) or 0) % len(
+        participants
+    )
+    leaver_seat = participants.index(username)
+    remaining = len(participants) - 1
+    # Keep the same driver unless the driver left, then the navigator takes over
+    if leaver_seat < driver_seat:
+        driver_seat -= 1
+    new_segment = driver_seat % remaining if remaining else 0
+
+    redis_client.lrem(key(session_id, "participants"), 0, username)
+    redis_client.set(key(session_id, "segment"), new_segment)
 
 
 async def save_code_to_db():
