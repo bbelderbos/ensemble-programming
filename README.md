@@ -1,4 +1,4 @@
-# Pybites Ensemble Programming
+# Ensemble Programming
 
 Building a tool to work as a team on a single codebase.
 
