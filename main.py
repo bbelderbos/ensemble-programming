@@ -119,6 +119,8 @@ async def session_page(request: Request, session_id: str):
 async def websocket_endpoint(session_id: str, websocket: WebSocket):
     """Handles real-time collaborative editing and typing notifications via WebSockets."""
     await manager.connect(session_id, websocket)
+    if code := redis_client.get(key(session_id, "code")):
+        await websocket.send_text(json.dumps({"type": "code", "content": code}))
 
     try:
         while True:
@@ -128,7 +130,7 @@ async def websocket_endpoint(session_id: str, websocket: WebSocket):
             if message.get("type") == "code":
                 if message.get("username") != current_roles(session_id).driver:
                     continue
-                redis_client.set(f"session:{session_id}:code", message["content"])
+                redis_client.set(key(session_id, "code"), message["content"])
 
                 await manager.broadcast(
                     session_id,

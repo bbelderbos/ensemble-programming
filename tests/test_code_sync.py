@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
 
+import main
 from main import app
 
 client = TestClient(app)
@@ -46,3 +47,13 @@ def test_only_the_driver_can_edit():
         editor.send_text(code("alice", "x = 1"))
 
         assert json.loads(peer.receive_text())["content"] == "x = 1"
+
+
+def test_joining_late_loads_the_current_code():
+    main.redis_client.set(main.key("s1", "code"), "x = 1")
+
+    with client.websocket_connect("/ws/s1") as latecomer:
+        assert json.loads(latecomer.receive_text()) == {
+            "type": "code",
+            "content": "x = 1",
+        }
