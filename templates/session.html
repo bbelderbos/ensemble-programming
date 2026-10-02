@@ -491,6 +491,7 @@ def highlight_traceback(text):
         showOutput("Running…", true, "", "");
 
         const pyodide = await pyodideReady;
+        await pyodide.loadPackagesFromImports(editor.getValue());
         let stdout = "";
         let stderr = "";
         pyodide.setStdout({ batched: line => stdout += line + "\n" });

@@ -32,6 +32,15 @@
          class="w-full rounded-xl shadow-2xl ring-1 ring-gray-200">
   </section>
 
+  <section id="demo" class="py-14">
+    <h2 class="text-3xl font-bold text-center">See it in action</h2>
+    <p class="mt-3 text-center text-gray-600">Alice and Bob solve FizzBuzz together in one minute.</p>
+    <video controls muted playsinline preload="none" poster="{{ url_for('static', path='demo.png') }}"
+           class="mt-8 w-full rounded-xl shadow-2xl ring-1 ring-gray-200">
+      <source src="{{ url_for('static', path='demo.mp4') }}" type="video/mp4">
+    </video>
+  </section>
+
   <section class="py-14">
     <h2 class="text-3xl font-bold text-center">Why teams code together</h2>
     <p class="mt-3 text-center text-gray-600 max-w-2xl mx-auto">

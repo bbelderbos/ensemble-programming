@@ -10,7 +10,7 @@ from playwright.async_api import BrowserContext, Page, Route, async_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765"
 OUT = Path(tempfile.mkdtemp(prefix="demo-recording-"))
-VIDEO = Path(__file__).parent / "demo.mp4"
+VIDEO = Path(__file__).parent.parent / "static" / "demo.mp4"
 SIZE = {"width": 720, "height": 1040}
 # Must match the ROTATION_SECONDS the app runs with
 DEMO_SEGMENT = 18

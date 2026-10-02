@@ -80,6 +80,20 @@ def test_code_runs_in_the_browser(live_server, context):
     expect(alice.locator("#stderr")).to_be_hidden()
 
 
+def test_run_code_loads_packages_pyodide_ships(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    expect(alice.locator("#editor-status")).to_have_text("You're driving.")
+
+    alice.evaluate(
+        "code => editor.setValue(code)",
+        "from pydantic import BaseModel\nprint(BaseModel.__name__)",
+    )
+    alice.click("#run-button")
+
+    expect(alice.locator("#output-status")).to_contain_text("Finished", timeout=60_000)
+    expect(alice.locator("#stdout")).to_have_text("BaseModel")
+
+
 def test_errors_show_a_clean_highlighted_traceback(live_server, context):
     alice = join(create_session(context, live_server), "Alice")
     expect(alice.locator("#editor-status")).to_have_text("You're driving.")

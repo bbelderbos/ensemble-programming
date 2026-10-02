@@ -104,6 +104,13 @@ def test_landing_page_offers_the_challenges(client):
         assert challenge.title in page
 
 
+def test_landing_page_plays_the_demo(client):
+    page = client.get("/").text
+
+    assert "/static/demo.mp4" in page
+    assert client.get("/static/demo.mp4").status_code == 200
+
+
 def test_starting_from_a_challenge_seeds_the_editor_and_shows_the_tests(client):
     challenge = main.CHALLENGES["sum-n-numbers"]
 

@@ -2,9 +2,9 @@
 
 A shared Python editor for mob/ensemble programming: the whole team works on one codebase in real time, in timed segments with rotating roles.
 
-[![Demo: Alice and Bob solve FizzBuzz together](assets/demo.png)](assets/demo.mp4)
+[![Demo: Alice and Bob solve FizzBuzz together](static/demo.png)](https://ensemble-programming.fly.dev/#demo)
 
-**Try it: [ensemble-programming.fly.dev](https://ensemble-programming.fly.dev)** · ▶️ [Watch the 1-minute demo](assets/demo.mp4)
+**Try it: [ensemble-programming.fly.dev](https://ensemble-programming.fly.dev)** · ▶️ [Watch the 1-minute demo](https://ensemble-programming.fly.dev/#demo)
 
 ## Features
 
@@ -59,7 +59,7 @@ ROTATION_SECONDS=18 uv run uvicorn main:app --port 8765   # in another terminal
 uv run --with playwright python assets/record_demo.py
 ```
 
-Needs ffmpeg and a Playwright Chromium (`uvx playwright install chromium`). Writes `assets/demo.mp4`.
+Needs ffmpeg and a Playwright Chromium (`uvx playwright install chromium`). Writes `static/demo.mp4`.
 
 ## Deploy
 

@@ -29,7 +29,7 @@ logs:
 status:
 	fly status
 
-# Records assets/demo.mp4; the app must run with short segments
+# Records static/demo.mp4; the app must run with short segments
 demo:
 	@echo "Run first: ROTATION_SECONDS=18 uv run uvicorn main:app --port 8765"
 	uv run --with playwright python assets/record_demo.py
