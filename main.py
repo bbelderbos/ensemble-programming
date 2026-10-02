@@ -117,6 +117,8 @@ async def new_session(goal: str = Form(...), challenge: str | None = Form(None))
 async def session_page(request: Request, session_id: str):
     """Returns the session page with real-time code editor."""
     slug = redis_client.get(key(session_id, "challenge"))
+    with Session(engine) as db:
+        session_obj = db.get(SessionModel, session_id)
     return templates.TemplateResponse(
         "session.html",
         {
@@ -124,6 +126,7 @@ async def session_page(request: Request, session_id: str):
             "session_id": session_id,
             "rotation_seconds": ROTATION_SECONDS,
             "challenge": CHALLENGES.get(slug) if slug else None,
+            "goal": session_obj.goal if session_obj else "Ensemble session",
         },
     )
 

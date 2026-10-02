@@ -2,88 +2,110 @@
 
 {% block title %}Live Coding Session{% endblock %}
 
+{% block header %}{% endblock %}
+
 {% block content %}
+  <header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3 min-w-0">
+      <a href="{{ url_for('home') }}" class="font-extrabold text-lg tracking-tight shrink-0">Ensemble<span class="text-indigo-600">.</span></a>
+      <span class="text-gray-300">/</span>
+      <h1 id="session-goal" class="font-semibold text-gray-800 truncate">{{ goal }}</h1>
+    </div>
+    <button id="copy-link" onclick="copyInviteLink()" class="inline-flex items-center gap-2 text-sm font-semibold bg-white ring-1 ring-gray-300 hover:ring-indigo-400 px-3 py-2 rounded-lg">
+      🔗 <span>Copy invite link</span>
+    </button>
+  </header>
 
-  <a href="{{ url_for('home') }}" class="text-indigo-500">Back to Home</a>
-
-  <div id="username-modal" class="fixed inset-0 flex justify-center items-center bg-gray-800 bg-opacity-75">
-    <div class="bg-white p-6 rounded-md shadow-md">
-      <h2 class="text-xl font-semibold">Enter Your Name</h2>
-      <input type="text" id="username-input" class="border p-2 rounded w-full mt-2" onkeydown="if (event.key === 'Enter') setUsername()">
-
-      <div class="mt-2">
-          <input type="checkbox" id="rotation-opt-in" checked>
-          <label for="rotation-opt-in">Take part in the rotation (uncheck to just watch)</label>
-      </div>
-
-      <button onclick="setUsername()" class="bg-indigo-500 text-white px-4 py-2 mt-4 rounded-md">Join</button>
+  <div id="username-modal" class="fixed inset-0 z-50 flex justify-center items-center bg-gray-900/60 backdrop-blur-sm">
+    <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-sm">
+      <h2 class="text-lg font-semibold">What's your name?</h2>
+      <input type="text" id="username-input" placeholder="Your name" class="mt-3 w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" onkeydown="if (event.key === 'Enter') setUsername()">
+      <label class="mt-3 flex items-start gap-2 text-sm text-gray-700">
+        <input type="checkbox" id="rotation-opt-in" checked class="mt-0.5">
+        <span>Take part in the rotation <span class="text-gray-500">(uncheck to just watch)</span></span>
+      </label>
+      <button onclick="setUsername()" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg">Join</button>
     </div>
   </div>
 
   {% if challenge %}
-  <details id="challenge" open class="bg-white shadow-md p-6 rounded-lg mb-6">
-    <summary class="cursor-pointer text-xl font-semibold">Challenge: {{ challenge.title }} <span class="ml-2 text-sm font-medium text-gray-500">{{ challenge.level }}</span></summary>
-    <div class="challenge-description mt-3 text-gray-700 space-y-2">{{ challenge.description | safe }}</div>
-    <details class="mt-4">
-      <summary class="cursor-pointer font-medium text-indigo-600">Show the tests ({{ challenge.module }}.py must pass these)</summary>
-      <pre id="challenge-tests" class="mt-2 p-4 rounded-md bg-gray-900 text-gray-100 text-sm overflow-x-auto">{{ challenge.tests }}</pre>
-    </details>
+  <details id="challenge" open class="bg-white rounded-xl ring-1 ring-gray-200 shadow-sm px-5 py-4 mb-6">
+    <summary class="cursor-pointer font-semibold">{{ challenge.title }} <span class="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{{ challenge.level }}</span></summary>
+    <div class="challenge-description mt-3 text-gray-700 space-y-2 text-sm">{{ challenge.description | safe }}</div>
   </details>
   {% endif %}
 
-  <div class="grid grid-cols-2 gap-6">
+  <div class="grid lg:grid-cols-3 gap-6 items-start">
+    <section class="lg:col-span-2 bg-white rounded-xl ring-1 ring-gray-200 shadow-sm overflow-hidden">
+      <div class="flex flex-wrap items-center justify-between gap-2 px-4 border-b border-gray-200">
+        <nav class="flex gap-5 text-sm font-medium">
+          <button id="code-tab" onclick="showTab('code')" class="tab py-3 border-b-2">{{ challenge.module if challenge else "main" }}.py</button>
+          {% if challenge %}
+          <button id="tests-tab" onclick="showTab('tests')" class="tab py-3 border-b-2">test_{{ challenge.module }}.py</button>
+          {% endif %}
+        </nav>
+        <p class="text-xs text-gray-500"><span id="editor-status" class="font-semibold text-gray-700"></span> <span id="typing-indicator"></span></p>
+      </div>
+      <div id="readonly-banner" hidden class="flex items-center gap-2 bg-amber-50 text-amber-900 text-sm px-4 py-2 border-b border-amber-100">
+        <span aria-hidden="true">🔒</span><span id="readonly-message"></span>
+      </div>
 
-    <!-- Left Column: Code Editor -->
-    <div class="bg-white shadow-md p-6 rounded-lg">
-      <h2 class="text-xl font-semibold mb-4">Shared Code Editor</h2>
-      <textarea id="code-editor"></textarea>
-      <p class="text-sm mt-2"><span id="editor-status" class="font-medium"></span> <span id="typing-indicator" class="text-gray-500"></span></p>
-
-      <button id="run-button" onclick="runCode()" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md">
-        Run Code
-      </button>
-      <button id="format-button" onclick="formatCode()" disabled class="bg-white ring-1 ring-gray-300 text-gray-700 font-semibold px-4 py-2 mt-4 ml-2 rounded-md disabled:opacity-50">
-        Format
-      </button>
+      <div id="code-panel"><textarea id="code-editor"></textarea></div>
       {% if challenge %}
-      <button id="test-button" onclick="runTests()" class="bg-green-600 text-white font-semibold px-4 py-2 mt-4 ml-2 rounded-md">
-        Run tests
-      </button>
+      <div id="tests-panel" hidden><textarea id="tests-editor">{{ challenge.tests }}</textarea></div>
       {% endif %}
 
-      <div id="output" hidden class="mt-4 rounded-md overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
+      <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+        <button id="run-button" onclick="runCode()" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+          Run Code <kbd data-keys="Mod-Enter"></kbd>
+        </button>
+        {% if challenge %}
+        <button id="test-button" onclick="runTests()" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+          Run tests <kbd data-keys="Shift-Mod-Enter"></kbd>
+        </button>
+        {% endif %}
+        <button id="format-button" onclick="formatCode()" disabled class="inline-flex items-center gap-2 bg-white ring-1 ring-gray-300 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
+          Format <kbd data-keys="Mod-S"></kbd>
+        </button>
+      </div>
+
+      <div id="output" hidden class="m-4 mt-0 rounded-lg overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
         <div id="output-status" class="px-4 py-2 bg-gray-800 text-xs font-sans font-semibold"></div>
         <pre id="stdout" class="px-4 py-3 whitespace-pre-wrap break-words"></pre>
         <pre id="stderr" class="px-4 py-3 whitespace-pre-wrap break-words border-t border-gray-700"></pre>
       </div>
+    </section>
 
-    </div>
-
-    <!-- Right Column: Role Rotation & Timer -->
-    <div class="bg-white shadow-md p-6 rounded-lg">
-      <h2 class="text-xl font-semibold mb-4">Rotation</h2>
-
-      <div class="rounded-md bg-gray-50 p-4">
-        <p id="time-remaining" class="text-4xl font-mono font-semibold"></p>
-        <p id="segment-label" class="text-sm text-gray-600 mt-1"></p>
-        <button id="start-button" onclick="startSegment()" hidden class="bg-green-600 text-white font-semibold px-4 py-2 mt-3 rounded-md">
-          Start segment
-        </button>
+    <aside class="bg-white rounded-xl ring-1 ring-gray-200 shadow-sm p-5 space-y-6">
+      <div>
+        <p class="panel-label">Segment</p>
+        <p id="time-remaining" class="mt-1 text-5xl font-mono font-bold tabular-nums"></p>
+        <p id="segment-label" class="mt-1 text-sm text-gray-600"></p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="start-button" onclick="startSegment()" hidden class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">▶ Start segment</button>
+          <button id="rotate-button" onclick="rotateNow()" hidden class="bg-white ring-1 ring-gray-300 hover:ring-indigo-400 text-gray-700 text-sm font-semibold px-3 py-2 rounded-lg">↻ Rotate now</button>
+        </div>
       </div>
 
-      <div class="mt-4 space-y-1 text-lg">
-        <p>Driver: <span id="driver-name" class="font-medium text-indigo-600"></span></p>
-        <p>Navigator: <span id="navigator-name" class="font-medium text-green-600"></span></p>
-        <p>Timekeeper: <span id="timekeeper-name" class="font-medium text-amber-600"></span></p>
+      <div>
+        <p class="panel-label">Roles</p>
+        <dl class="mt-2 space-y-1.5 text-sm">
+          <div class="flex justify-between gap-2"><dt class="text-gray-500">Driver <span class="text-gray-400">types</span></dt><dd id="driver-name" class="font-semibold text-indigo-700"></dd></div>
+          <div class="flex justify-between gap-2"><dt class="text-gray-500">Navigator <span class="text-gray-400">steers</span></dt><dd id="navigator-name" class="font-semibold text-green-700"></dd></div>
+          <div class="flex justify-between gap-2"><dt class="text-gray-500">Timekeeper <span class="text-gray-400">runs the clock</span></dt><dd id="timekeeper-name" class="font-semibold text-amber-700"></dd></div>
+        </dl>
       </div>
 
-      <h3 class="text-lg font-semibold mt-4">In rotation</h3>
-      <ol id="participant-list" class="list-decimal list-inside mt-1"></ol>
+      <div>
+        <p class="panel-label">In rotation</p>
+        <ol id="participant-list" class="mt-2 space-y-1 text-sm list-decimal list-inside"></ol>
+      </div>
 
-      <h3 class="text-lg font-semibold mt-4">Watching</h3>
-      <ul id="observer-list" class="mt-1 text-gray-600"></ul>
-    </div>
-
+      <div>
+        <p class="panel-label">Watching</p>
+        <ul id="observer-list" class="mt-2 space-y-1 text-sm text-gray-600"></ul>
+      </div>
+    </aside>
   </div>
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css">
@@ -149,6 +171,39 @@
         renderRotation();
     };
 
+    function readOnlyMessage() {
+        const driver = rotation.driver;
+        if (rotation.navigator === username) return `${driver} is driving. You're navigating: tell them what to type.`;
+        if (rotation.observers.includes(username)) return `${driver} is driving. You're watching; you can still run the code.`;
+        return `${driver} is driving. Only the driver types; you can still run the code.`;
+    }
+
+    function rotateNow() {
+        send(rotationWS, { type: "rotate", username: username });
+    }
+
+    async function copyInviteLink() {
+        await navigator.clipboard.writeText(location.href);
+        const text = document.querySelector("#copy-link span");
+        text.textContent = "Copied!";
+        setTimeout(() => (text.textContent = "Copy invite link"), 2000);
+    }
+
+    function showTab(name) {
+        for (const tab of ["code", "tests"]) {
+            const button = document.getElementById(`${tab}-tab`);
+            if (!button) continue;
+            const active = tab === name;
+            document.getElementById(`${tab}-panel`).hidden = !active;
+            button.classList.toggle("border-indigo-600", active);
+            button.classList.toggle("text-indigo-700", active);
+            button.classList.toggle("border-transparent", !active);
+            button.classList.toggle("text-gray-500", !active);
+        }
+        // CodeMirror can't measure itself while hidden
+        (name === "tests" ? testsEditor : editor)?.refresh();
+    }
+
     function startSegment() {
         send(rotationWS, { type: "start", username: username });
     }
@@ -158,8 +213,14 @@
         return name === username ? `${name} (you)` : name;
     }
 
-    function listItems(names) {
-        return names.map(name => `<li>${label(name)}</li>`).join("") || "<li>—</li>";
+    // Names come from other people, so render them as text, never HTML
+    function renderList(id, names) {
+        const items = (names.length ? names : [null]).map(name => {
+            const item = document.createElement("li");
+            item.textContent = label(name);
+            return item;
+        });
+        document.getElementById(id).replaceChildren(...items);
     }
 
     function formatSeconds(seconds) {
@@ -170,8 +231,8 @@
         document.getElementById("driver-name").textContent = label(rotation.driver);
         document.getElementById("navigator-name").textContent = label(rotation.navigator);
         document.getElementById("timekeeper-name").textContent = label(rotation.timekeeper);
-        document.getElementById("participant-list").innerHTML = listItems(rotation.participants);
-        document.getElementById("observer-list").innerHTML = listItems(rotation.observers);
+        renderList("participant-list", rotation.participants);
+        renderList("observer-list", rotation.observers);
 
         const driving = rotation.driver === username;
         editor.setOption("readOnly", !driving);
@@ -179,9 +240,12 @@
         document.getElementById("editor-status").textContent = driving
             ? "You're driving."
             : rotation.driver ? `${rotation.driver} is driving.` : "Nobody is driving yet.";
+        document.getElementById("readonly-banner").hidden = driving || !rotation.driver;
+        document.getElementById("readonly-message").textContent = readOnlyMessage();
 
-        document.getElementById("start-button").hidden =
-            deadline !== null || rotation.timekeeper !== username;
+        const timekeeping = rotation.timekeeper === username;
+        document.getElementById("start-button").hidden = deadline !== null || !timekeeping;
+        document.getElementById("rotate-button").hidden = !timekeeping;
         renderClock();
     }
 
@@ -278,6 +342,8 @@
         hintOptions: { hint: jediHint, completeSingle: false },
         extraKeys: {
             "Ctrl-Space": "autocomplete",
+            "Cmd-S": () => formatCode(),
+            "Ctrl-S": () => formatCode(),
             "Cmd-Enter": () => runCode(),
             "Ctrl-Enter": () => runCode(),
             "Shift-Cmd-Enter": () => challenge && runTests(),
@@ -286,6 +352,21 @@
             "Ctrl-/": "toggleComment",
         },
     });
+
+    const testsEditor = document.getElementById("tests-editor")
+        ? CodeMirror.fromTextArea(document.getElementById("tests-editor"), {
+              mode: "python", lineNumbers: true, readOnly: true, viewportMargin: Infinity,
+          })
+        : null;
+    showTab("code");
+
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+    for (const kbd of document.querySelectorAll("kbd[data-keys]")) {
+        kbd.textContent = kbd.dataset.keys
+            .replace("Shift-", isMac ? "⇧" : "Shift+")
+            .replace("Mod-", isMac ? "⌘" : "Ctrl+")
+            .replace("Enter", isMac ? "↵" : "Enter");
+    }
 
     // Suggest attributes right after a dot, like an IDE
     editor.on("inputRead", (cm, change) => {

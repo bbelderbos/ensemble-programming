@@ -1,16 +1,26 @@
-#username-modal {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
-    z-index: 100; /* Ensure modal content is above the overlay */
+/* Keep the editor below the join modal */
+.CodeMirror {
+    z-index: 10 !important;
+    height: 420px;
+    font-size: 14px;
 }
 
-.CodeMirror {
-    z-index: 10 !important; /* Ensure it's lower than modal */
+.panel-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
 }
-#time-remaining {
-    display: inline-block;
-    width: 50px; /* Adjust as needed */
-    text-align: center;
+
+kbd {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 0.7rem;
+    font-weight: 500;
+    opacity: 0.75;
+}
+
+/* Tailwind display classes like flex would otherwise override the hidden attribute */
+[hidden] {
+    display: none !important;
 }

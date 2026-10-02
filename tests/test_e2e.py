@@ -113,7 +113,7 @@ def test_challenge_tests_run_in_the_browser(live_server, context):
     alice.wait_for_url(re.compile("/session/"))
     join(alice, "Alice")
     expect(alice.locator("#editor-status")).to_have_text("You're driving.")
-    expect(alice.locator(".CodeMirror")).to_contain_text("def sum_numbers")
+    expect(alice.locator("#code-panel .CodeMirror")).to_contain_text("def sum_numbers")
 
     alice.click("#test-button")
     status = alice.locator("#output-status")
@@ -195,3 +195,65 @@ def test_cmd_enter_runs_the_code(live_server, context):
     alice.keyboard.press("ControlOrMeta+Enter")
 
     expect(alice.locator("#stdout")).to_have_text("shortcut", timeout=90_000)
+
+
+def test_non_drivers_see_why_they_cannot_type(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    bob = open_and_join(context, alice.url, "Bob")
+
+    expect(bob.locator("#readonly-banner")).to_be_visible()
+    expect(bob.locator("#readonly-banner")).to_contain_text("Alice is driving")
+    expect(alice.locator("#readonly-banner")).to_be_hidden()
+
+
+def test_copy_invite_link(live_server, context):
+    context.grant_permissions(["clipboard-read", "clipboard-write"])
+    alice = join(create_session(context, live_server), "Alice")
+    alice.click("#copy-link")
+
+    expect(alice.locator("#copy-link")).to_contain_text("Copied")
+    assert alice.evaluate("navigator.clipboard.readText()") == alice.url
+
+
+def test_session_shows_its_goal(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+
+    expect(alice.locator("#session-goal")).to_have_text("FizzBuzz")
+
+
+def test_challenge_tests_live_in_a_highlighted_tab(live_server, context):
+    alice = context.new_page()
+    alice.goto(live_server)
+    alice.get_by_role("button", name="Sum n numbers").click()
+    alice.wait_for_url(re.compile("/session/"))
+    join(alice, "Alice")
+
+    expect(alice.locator("#tests-panel")).to_be_hidden()
+    alice.click("#tests-tab")
+    tests_panel = alice.locator("#tests-panel")
+    expect(tests_panel).to_contain_text("def test_sum_numbers_default_args")
+    expect(tests_panel.locator(".cm-keyword").first).to_be_visible()
+
+
+def test_timekeeper_can_rotate_now(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    bob = open_and_join(context, alice.url, "Bob")
+
+    expect(alice.locator("#rotate-button")).to_be_hidden()
+    bob.click("#rotate-button")
+    expect(bob.locator("#editor-status")).to_have_text("You're driving.")
+
+
+def test_save_shortcut_formats(live_server, context):
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type("x=1")
+    alice.keyboard.press("ControlOrMeta+s")
+
+    alice.wait_for_function("editor.getValue() === 'x = 1\\n'", timeout=60_000)
+
+
+def test_names_are_shown_as_text_not_html(live_server, context):
+    alice = join(create_session(context, live_server), "<b>Al</b>")
+
+    expect(alice.locator("#participant-list")).to_contain_text("<b>Al</b>")
+    expect(alice.locator("#participant-list b")).to_have_count(0)
