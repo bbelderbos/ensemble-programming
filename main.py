@@ -230,6 +230,17 @@ def start_segment(session_id: str, username: str) -> bool:
     return True
 
 
+def rotate_now(session_id: str, username: str) -> bool:
+    """Timekeeper ends the segment (or break) early: roles rotate, clock resets."""
+    if username != current_roles(session_id).timekeeper:
+        return False
+    if timer := segment_timers.pop(session_id, None):
+        timer.cancel()
+    redis_client.delete(key(session_id, "ends_at"))
+    redis_client.incr(key(session_id, "segment"))
+    return True
+
+
 @app.websocket("/ws/rotation/{session_id}")
 async def websocket_rotation(session_id: str, websocket: WebSocket):
     """Tracks who drives, navigates and keeps time, and runs the segment timer."""
@@ -251,6 +262,10 @@ async def websocket_rotation(session_id: str, websocket: WebSocket):
 
             elif message["type"] == "start":
                 if not start_segment(session_id, message["username"]):
+                    continue
+
+            elif message["type"] == "rotate":
+                if not rotate_now(session_id, message["username"]):
                     continue
 
             await broadcast_rotation(session_id)

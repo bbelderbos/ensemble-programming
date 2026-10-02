@@ -176,3 +176,36 @@ def test_rejoining_does_not_duplicate_you():
         state = receive_state(ws)
 
     assert state["participants"] == ["ann"]
+
+
+def test_timekeeper_can_rotate_early_which_resets_the_clock(monkeypatch):
+    monkeypatch.setattr(main, "ROTATION_SECONDS", 0.2)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        for name in ("ann", "bob", "cy"):
+            send(ws, type="join", username=name, participate=True)
+            receive_state(ws)
+        send(ws, type="start", username="cy")
+        receive_state(ws)
+
+        send(ws, type="rotate", username="ann")  # driver, not timekeeper
+        send(ws, type="rotate", username="cy")
+        rotated = receive_state(ws)
+        # The cancelled segment timer must not rotate a second time
+        time.sleep(0.3)
+        send(ws, type="join", username="dee", participate=False)
+        later = receive_state(ws)
+
+    assert rotated["remaining"] is None
+    assert (rotated["driver"], rotated["timekeeper"]) == ("bob", "ann")
+    assert later["driver"] == "bob"
+
+
+def test_rotating_during_a_break_moves_to_the_next_driver():
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        for name in ("ann", "bob"):
+            send(ws, type="join", username=name, participate=True)
+            receive_state(ws)
+        send(ws, type="rotate", username="bob")
+        state = receive_state(ws)
+
+    assert (state["driver"], state["timekeeper"]) == ("bob", "ann")
