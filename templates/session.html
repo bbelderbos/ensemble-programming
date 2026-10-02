@@ -103,6 +103,16 @@
     let rotationWS = new WebSocket(wsProtocol + location.host + "/ws/rotation/" + session_id);
     const rotationSeconds = {{ rotation_seconds }};
 
+    // Sending before a socket opens throws and drops the message, e.g. a quick Join
+    function send(socket, message) {
+        const payload = JSON.stringify(message);
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(payload);
+        } else {
+            socket.addEventListener("open", () => socket.send(payload), { once: true });
+        }
+    }
+
     function setUsername() {
         // update global username variable
         username = document.getElementById("username-input").value.trim();
@@ -110,7 +120,7 @@
 
         if (username) {
             document.getElementById("username-modal").style.display = "none";
-            rotationWS.send(JSON.stringify({ type: "join", username: username, participate: participate }));
+            send(rotationWS, { type: "join", username: username, participate: participate });
         }
     }
 
@@ -140,7 +150,7 @@
     };
 
     function startSegment() {
-        rotationWS.send(JSON.stringify({ type: "start", username: username }));
+        send(rotationWS, { type: "start", username: username });
     }
 
     function label(name) {
@@ -268,6 +278,10 @@
         hintOptions: { hint: jediHint, completeSingle: false },
         extraKeys: {
             "Ctrl-Space": "autocomplete",
+            "Cmd-Enter": () => runCode(),
+            "Ctrl-Enter": () => runCode(),
+            "Shift-Cmd-Enter": () => challenge && runTests(),
+            "Shift-Ctrl-Enter": () => challenge && runTests(),
             "Cmd-/": "toggleComment",
             "Ctrl-/": "toggleComment",
         },
@@ -286,12 +300,12 @@
 
     editor.on("change", function(cm) {
         if (!isUpdatingFromServer) {
-            ws.send(JSON.stringify({ type: "code", username: username, content: editor.getValue() }));
-            ws.send(JSON.stringify({ type: "typing", username: username }));
+            send(ws, { type: "code", username: username, content: editor.getValue() });
+            send(ws, { type: "typing", username: username });
 
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
-                ws.send(JSON.stringify({ type: "stopped_typing", username: username }));
+                send(ws, { type: "stopped_typing", username: username });
             }, 2000); // Remove indicator if no typing for 2s
         }
     });

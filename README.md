@@ -13,7 +13,7 @@ A shared Python editor for mob/ensemble programming: the whole team works on one
 - **Timed segments with a debrief**: segments last 5 minutes. When time is up, roles rotate and the team takes a break until the timekeeper starts the next segment.
 - **Observers**: uncheck "Take part in the rotation" when joining to sit in and watch without taking a turn.
 - **Starter challenges**: pick one of 14 free [Pybites Platform](https://pybitesplatform.com) exercises on the landing page. The session opens with the starter code and a **Run tests** button that runs the exercise's pytest tests in the browser. `make challenges` re-exports them from the platform's catalog (never including solutions).
-- **IDE basics, no AI**: Jedi completions (Ctrl-Space, or after a `.`), Ruff warnings as you type and a **Format** button, auto-closing brackets and Cmd/Ctrl-/ to comment. All of it runs in the browser.
+- **IDE basics, no AI**: Jedi completions (Ctrl-Space, or after a `.`), Ruff warnings as you type and a **Format** button, auto-closing brackets, Cmd/Ctrl-/ to comment, Cmd/Ctrl-Enter to run (add Shift to run a challenge's tests). All of it runs in the browser.
 - **Run code in the browser**: Python runs client-side via [Pyodide](https://pyodide.org) (Python 3.14 on WebAssembly), so the server never executes user code.
 
 ## How it works

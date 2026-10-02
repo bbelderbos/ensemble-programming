@@ -165,3 +165,33 @@ def test_format_button_formats_with_ruff(live_server, context):
     alice.click("#format-button")
 
     alice.wait_for_function("editor.getValue() === 'x = [1, 2]\\n'", timeout=60_000)
+
+
+def test_joining_before_the_connection_opens_still_registers(live_server, context):
+    page = context.new_page()
+    # Real networks take a while to open WebSockets; joining must not race them
+    cdp = context.new_cdp_session(page)
+    cdp.send(
+        "Network.emulateNetworkConditions",
+        {
+            "offline": False,
+            "latency": 800,
+            "downloadThroughput": -1,
+            "uploadThroughput": -1,
+        },
+    )
+    page.goto(live_server)
+    page.fill("input[name=goal]", "x")
+    page.click("text=Create Session")
+    page.wait_for_url(re.compile("/session/"))
+    join(page, "Alice")
+
+    expect(page.locator("#participant-list")).to_contain_text("Alice", timeout=10_000)
+
+
+def test_cmd_enter_runs_the_code(live_server, context):
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type('print("shortcut")')
+    alice.keyboard.press("ControlOrMeta+Enter")
+
+    expect(alice.locator("#stdout")).to_have_text("shortcut", timeout=90_000)
