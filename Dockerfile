@@ -10,7 +10,7 @@ ENV UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --locked --no-dev
 
-COPY main.py rotation.py start.sh ./
+COPY main.py rotation.py challenges.py challenges.json start.sh ./
 COPY templates templates
 COPY static static
 

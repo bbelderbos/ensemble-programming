@@ -20,3 +20,17 @@ jobs:
       - run: uv run pytest -q
         env:
           DATABASE_URL: "sqlite://"
+
+  image:
+    # Catches files missing from the Docker image before `make deploy` does
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t ensemble .
+      - run: |
+          docker run -d -p 8000:8000 -v data:/data \
+            -e DATABASE_URL=sqlite:////data/ensemble.db \
+            -e REDIS_URL=redis://localhost:6379 ensemble
+          for i in $(seq 1 30); do curl -sf localhost:8000/ >/dev/null && break; sleep 1; done
+          curl -sf localhost:8000/ | grep -q "Start a session"
+          curl -sf -X POST -d "goal=ci&challenge=sum-n-numbers" -D - -o /dev/null localhost:8000/new-session | grep -qi hx-redirect
