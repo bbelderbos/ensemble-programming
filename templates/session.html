@@ -42,6 +42,9 @@
       <button id="run-button" onclick="runCode()" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md">
         Run Code
       </button>
+      <button id="format-button" onclick="formatCode()" disabled class="bg-white ring-1 ring-gray-300 text-gray-700 font-semibold px-4 py-2 mt-4 ml-2 rounded-md disabled:opacity-50">
+        Format
+      </button>
       {% if challenge %}
       <button id="test-button" onclick="runTests()" class="bg-green-600 text-white font-semibold px-4 py-2 mt-4 ml-2 rounded-md">
         Run tests
@@ -83,6 +86,13 @@
 
   </div>
 
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/lint.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/lint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/comment/comment.min.js"></script>
   <script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
   <script>
     let username = "";
@@ -155,6 +165,7 @@
 
         const driving = rotation.driver === username;
         editor.setOption("readOnly", !driving);
+        document.getElementById("format-button").disabled = !driving;
         document.getElementById("editor-status").textContent = driving
             ? "You're driving."
             : rotation.driver ? `${rotation.driver} is driving.` : "Nobody is driving yet.";
@@ -181,6 +192,64 @@
 
     setInterval(renderClock, 250);
 
+    // Jedi gives real Python completions; loaded on first use to keep page load light
+    let jediReady = null;
+
+    function jediHint(cm, callback) {
+        const cursor = cm.getCursor();
+        jediReady ??= pyodideReady.then(async pyodide => {
+            await pyodide.loadPackage("jedi");
+            return pyodide;
+        });
+        jediReady.then(pyodide => {
+            const completions = pyodide.globals
+                .get("complete")(cm.getValue(), cursor.line + 1, cursor.ch)
+                .toJs();
+            if (!completions.length) return callback(null);
+            const typedLength = completions[0][2];
+            callback({
+                list: completions.map(([name, type]) => ({ text: name, displayText: `${name}  ·  ${type}` })),
+                from: CodeMirror.Pos(cursor.line, cursor.ch - typedLength),
+                to: cursor,
+            });
+        });
+    }
+    jediHint.async = true;
+
+    // Ruff compiled to WebAssembly lints and formats in the browser
+    const ruffReady = import("https://cdn.jsdelivr.net/npm/@astral-sh/ruff-wasm-web@0.16.10/ruff_wasm.js")
+        .then(async ruff => {
+            await ruff.default();
+            return new ruff.Workspace(ruff.Workspace.defaultSettings(), ruff.PositionEncoding.Utf16);
+        });
+
+    function ruffLint(text, updateLinting) {
+        ruffReady.then(workspace => {
+            const annotations = workspace.check(text).map(d => ({
+                from: CodeMirror.Pos(d.start_location.row - 1, d.start_location.column - 1),
+                to: CodeMirror.Pos(d.end_location.row - 1, d.end_location.column - 1),
+                message: d.code ? `${d.code}: ${d.message}` : d.message,
+                severity: d.code ? "warning" : "error",
+            }));
+            updateLinting(annotations);
+        });
+    }
+
+    async function formatCode() {
+        const workspace = await ruffReady;
+        const cursor = editor.getCursor();
+        try {
+            const formatted = workspace.format(editor.getValue());
+            if (formatted !== editor.getValue()) {
+                editor.setValue(formatted);
+                editor.setCursor(cursor);
+            }
+        } catch (error) {
+            showOutput("✗ Can't format: fix the syntax error first", false, "", "");
+        }
+        editor.focus();
+    }
+
     let editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
         mode: "python",
         theme: "default",
@@ -191,7 +260,24 @@
         indentWithTabs: false,
         lineWrapping: true,
         smartIndent: true,
-        readOnly: true  // until the rotation says you're driving
+        readOnly: true,  // until the rotation says you're driving
+        autoCloseBrackets: true,
+        matchBrackets: true,
+        gutters: ["CodeMirror-lint-markers"],
+        lint: { getAnnotations: ruffLint, async: true },
+        hintOptions: { hint: jediHint, completeSingle: false },
+        extraKeys: {
+            "Ctrl-Space": "autocomplete",
+            "Cmd-/": "toggleComment",
+            "Ctrl-/": "toggleComment",
+        },
+    });
+
+    // Suggest attributes right after a dot, like an IDE
+    editor.on("inputRead", (cm, change) => {
+        if (!cm.getOption("readOnly") && change.text.join("").endsWith(".")) {
+            cm.showHint();
+        }
     });
 
     let isUpdatingFromServer = false;
@@ -256,6 +342,11 @@ def run_challenge_tests(module, code, tests):
     lines = report.getvalue().strip().splitlines()
     summary = lines[-1].strip("= ") if lines else "no tests ran"
     return int(exit_code) == 0, summary, report.getvalue()
+
+def complete(source, line, column):
+    import jedi
+    completions = jedi.Script(source).complete(line, column)[:50]
+    return [(c.name, c.type, len(c.name) - len(c.complete)) for c in completions]
 
 def highlight_traceback(text):
     return highlight(text, PythonTracebackLexer(), HtmlFormatter(nowrap=True, noclasses=True, style="monokai"))

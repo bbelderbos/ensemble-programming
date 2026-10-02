@@ -128,3 +128,40 @@ def test_plain_sessions_have_no_test_button(live_server, context):
     alice = join(create_session(context, live_server), "Alice")
     expect(alice.locator("#editor-status")).to_have_text("You're driving.")
     expect(alice.locator("#test-button")).to_have_count(0)
+
+
+def driving_alice(context, live_server) -> Page:
+    alice = join(create_session(context, live_server), "Alice")
+    expect(alice.locator("#editor-status")).to_have_text("You're driving.")
+    alice.locator(".CodeMirror").click()
+    return alice
+
+
+def test_ctrl_space_completes_with_jedi(live_server, context):
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type("import collections\ncollections.Coun")
+    alice.keyboard.press("Control+Space")
+
+    expect(alice.locator(".CodeMirror-hints")).to_contain_text(
+        "Counter", timeout=90_000
+    )
+    alice.keyboard.press("Enter")
+    expect(alice.locator(".CodeMirror")).to_contain_text("collections.Counter")
+
+
+def test_ruff_flags_problems_as_you_type(live_server, context):
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type("import os\n")
+
+    marker = alice.locator(".CodeMirror-lint-marker").first
+    expect(marker).to_be_visible(timeout=60_000)
+    marker.hover()
+    expect(alice.locator(".CodeMirror-lint-tooltip")).to_contain_text("F401")
+
+
+def test_format_button_formats_with_ruff(live_server, context):
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type("x=[1,2]")
+    alice.click("#format-button")
+
+    alice.wait_for_function("editor.getValue() === 'x = [1, 2]\\n'", timeout=60_000)
