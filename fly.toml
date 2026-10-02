@@ -1,4 +1,4 @@
-app = "pybites-ensemble"
+app = "ensemble-programming"
 primary_region = "ams"
 
 [env]
