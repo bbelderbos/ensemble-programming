@@ -1,16 +1,105 @@
 {% extends "base.html" %}
 
-{% block title %}Start a Coding Session{% endblock %}
+{% block title %}Ensemble Programming: code together, stay sharp{% endblock %}
+
+{% block header %}{% endblock %}
 
 {% block content %}
-  <div class="max-w-lg mx-auto bg-white shadow-md p-6 rounded-lg">
-    <h2 class="text-xl font-semibold mb-4">Start a New Session</h2>
-    <form hx-post="/new-session" hx-trigger="submit" hx-redirect="true" class="space-y-4">
-      <label class="block">
-        <span class="text-gray-700">Goal:</span>
-        <input type="text" name="goal" required class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring focus:ring-indigo-200">
-      </label>
-      <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Create Session</button>
-    </form>
-  </div>
+  <section class="grid lg:grid-cols-2 gap-10 items-center py-8">
+    <div>
+      <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Open source · Python in the browser</p>
+      <h1 class="mt-3 text-4xl sm:text-5xl font-extrabold leading-tight">Code together.<br>Stay sharp.</h1>
+      <p class="mt-5 text-lg text-gray-600">
+        Run ensemble (mob) programming sessions in the browser: one shared editor, a rotating
+        driver, navigator and timekeeper, and short timed segments with a debrief in between.
+        No installs, no screen sharing.
+      </p>
+
+      <div id="start" class="mt-8 bg-white shadow-lg ring-1 ring-gray-200 p-6 rounded-xl">
+        <h2 class="text-lg font-semibold">Start a session</h2>
+        <form hx-post="/new-session" hx-trigger="submit" hx-redirect="true" class="mt-4 flex flex-col sm:flex-row gap-3">
+          <label class="sr-only" for="goal">Goal</label>
+          <input id="goal" type="text" name="goal" required placeholder="Goal, e.g. refactor the billing module"
+                 class="flex-1 p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <button type="submit" class="bg-indigo-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-indigo-700">Create Session</button>
+        </form>
+        <p class="mt-3 text-sm text-gray-500">Share the link and your team joins from any browser.</p>
+      </div>
+    </div>
+
+    <img src="{{ url_for('static', path='session.png') }}" alt="A session with Alice driving, Bob navigating and a highlighted traceback"
+         class="w-full rounded-xl shadow-2xl ring-1 ring-gray-200">
+  </section>
+
+  <section class="py-14">
+    <h2 class="text-3xl font-bold text-center">Why teams code together</h2>
+    <p class="mt-3 text-center text-gray-600 max-w-2xl mx-auto">
+      The whole team works on the same problem, at the same time, on one codebase.
+      It's one of the fastest ways to grow engineers and keep everyone close to the code.
+    </p>
+    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <p class="text-2xl">🛠️</p>
+        <h3 class="mt-3 font-semibold text-lg">Stay technical</h3>
+        <p class="mt-2 text-gray-600">Leads and seniors keep their hands on the keyboard in short, regular turns instead of drifting into meetings.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <p class="text-2xl">🎓</p>
+        <h3 class="mt-3 font-semibold text-lg">Train engineers</h3>
+        <p class="mt-2 text-gray-600">Juniors drive while seniors navigate. Skills move through hands on the keyboard, not through docs nobody reads.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <p class="text-2xl">🧠</p>
+        <h3 class="mt-3 font-semibold text-lg">Share knowledge</h3>
+        <p class="mt-2 text-gray-600">Everyone sees every decision as it's made. No single owner, fewer handoffs and shorter review queues.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <p class="text-2xl">🥋</p>
+        <h3 class="mt-3 font-semibold text-lg">Practice on purpose</h3>
+        <p class="mt-2 text-gray-600">Run katas and coding dojos with a built-in timer and a debrief after every segment.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-14">
+    <h2 class="text-3xl font-bold text-center">How it works</h2>
+    <ol class="mt-10 grid md:grid-cols-3 gap-6">
+      <li class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white font-bold">1</span>
+        <h3 class="mt-4 font-semibold text-lg">Create a session</h3>
+        <p class="mt-2 text-gray-600">Set a goal and share the link. Everyone joins from their browser.</p>
+      </li>
+      <li class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white font-bold">2</span>
+        <h3 class="mt-4 font-semibold text-lg">Join the rotation</h3>
+        <p class="mt-2 text-gray-600">Take a turn as driver, navigator or timekeeper, or sit in as an observer to watch and learn.</p>
+      </li>
+      <li class="bg-white p-6 rounded-xl shadow-sm ring-1 ring-gray-200">
+        <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white font-bold">3</span>
+        <h3 class="mt-4 font-semibold text-lg">Code in segments</h3>
+        <p class="mt-2 text-gray-600">The driver types, the navigator steers. When time is up, roles rotate and the team debriefs before the next segment.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="py-14">
+    <h2 class="text-3xl font-bold text-center">Built for the way ensembles work</h2>
+    <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-6 max-w-5xl mx-auto">
+      <div><h3 class="font-semibold">⚡ Live shared editor</h3><p class="mt-1 text-gray-600">Every keystroke streams to the whole team instantly.</p></div>
+      <div><h3 class="font-semibold">⌨️ Driver-only typing</h3><p class="mt-1 text-gray-600">Ideas go through someone else's hands, the core rule of ensemble programming.</p></div>
+      <div><h3 class="font-semibold">🐍 Python in your browser</h3><p class="mt-1 text-gray-600">Code runs locally via Pyodide, with highlighted tracebacks. Nothing runs on the server.</p></div>
+      <div><h3 class="font-semibold">⏱️ Rotation timer</h3><p class="mt-1 text-gray-600">5-minute segments, started by the timekeeper, with a break to debrief.</p></div>
+      <div><h3 class="font-semibold">👀 Observers</h3><p class="mt-1 text-gray-600">Managers, new hires or students can watch without taking a turn.</p></div>
+      <div><h3 class="font-semibold">🔓 Open source</h3><p class="mt-1 text-gray-600">FastAPI, WebSockets and htmx. <a class="text-indigo-600 underline" href="https://github.com/bbelderbos/ensemble-programming">Read the code</a>.</p></div>
+    </div>
+  </section>
+
+  <section class="py-14 text-center">
+    <h2 class="text-3xl font-bold">Ready for your first session?</h2>
+    <a href="#start" class="mt-6 inline-block bg-indigo-600 text-white font-semibold px-8 py-3 rounded-lg hover:bg-indigo-700">Start a session</a>
+  </section>
+
+  <footer class="py-8 border-t border-gray-200 text-center text-sm text-gray-500">
+    <a class="hover:text-gray-700" href="https://github.com/bbelderbos/ensemble-programming">GitHub</a>
+  </footer>
 {% endblock %}
