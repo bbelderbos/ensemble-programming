@@ -1,16 +1,17 @@
 import asyncio
+import hashlib
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-from playwright.async_api import Page, async_playwright
+from playwright.async_api import BrowserContext, Page, Route, async_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765"
 OUT = Path(tempfile.mkdtemp(prefix="demo-recording-"))
 VIDEO = Path(__file__).parent / "demo.mp4"
-SIZE = {"width": 720, "height": 840}
+SIZE = {"width": 720, "height": 1040}
 # Must match the ROTATION_SECONDS the app runs with
 DEMO_SEGMENT = 18
 
@@ -32,9 +33,13 @@ OVERLAY_JS = """
 ([who, color]) => {
   const badge = document.createElement('div');
   badge.textContent = who + "'s browser";
-  badge.style.cssText = `position:fixed;top:10px;right:10px;z-index:9999;padding:6px 14px;
+  badge.style.cssText = `position:fixed;top:4px;left:50%;transform:translateX(-50%);z-index:9999;padding:4px 12px;
     border-radius:999px;background:${color};color:#fff;font:600 15px system-ui`;
   document.body.appendChild(badge);
+  // Shorter editor so the stacked rotation panel stays in view at this width
+  const style = document.createElement('style');
+  style.textContent = '.CodeMirror { height: 250px !important; }';
+  document.head.appendChild(style);
 }
 """
 
@@ -47,6 +52,31 @@ FLASH_JS = """
   setTimeout(() => m.remove(), 400);
 }
 """
+
+
+CDN_CACHE = Path.home() / ".cache" / "ensemble-demo-cdn"
+
+
+async def serve_cdn_from_disk(route: Route) -> None:
+    # Pyodide is ~15 MB; downloading it per browser stalls the recording
+    cached = CDN_CACHE / hashlib.sha256(route.request.url.encode()).hexdigest()
+    if not cached.exists():
+        response = await route.fetch()
+        if not response.ok:
+            await route.fulfill(response=response)
+            return
+        CDN_CACHE.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(await response.body())
+        cached.with_suffix(".type").write_text(response.headers["content-type"])
+    await route.fulfill(
+        body=cached.read_bytes(),
+        content_type=cached.with_suffix(".type").read_text(),
+        headers={"access-control-allow-origin": "*"},
+    )
+
+
+async def use_cdn_cache(context: BrowserContext) -> None:
+    await context.route("https://cdn.jsdelivr.net/**", serve_cdn_from_disk)
 
 
 async def overlay(page: Page, who: str, color: str) -> None:
@@ -166,6 +196,8 @@ async def main() -> None:
         ctx_b = await browser.new_context(
             viewport=SIZE, record_video_dir=OUT / "bob", record_video_size=SIZE
         )
+        for ctx in (ctx_a, ctx_b):
+            await use_cdn_cache(ctx)
         alice, bob = await ctx_a.new_page(), await ctx_b.new_page()
         both = [alice, bob]
 
@@ -177,9 +209,7 @@ async def main() -> None:
         await overlay(bob, "Bob", "#059669")
         await caption("Alice starts a new ensemble session")
         await alice.wait_for_timeout(800)
-        await alice.locator("input[name=goal]").press_sequentially(
-            "Solve FizzBuzz together", delay=60
-        )
+        await alice.locator("#goal").press_sequentially("FizzBuzz", delay=60)
         await alice.wait_for_timeout(600)
         await alice.get_by_role("button", name="Create Session").click()
         await alice.wait_for_url("**/session/**")
@@ -199,7 +229,9 @@ async def main() -> None:
         await bob.wait_for_timeout(1000)
 
         # Carol only watches; her browser isn't recorded
-        carol = await (await browser.new_context()).new_page()
+        ctx_c = await browser.new_context()
+        await use_cdn_cache(ctx_c)
+        carol = await ctx_c.new_page()
         await carol.goto(alice.url)
         await carol.locator("#username-input").fill("Carol")
         await carol.locator("#rotation-opt-in").uncheck()
@@ -216,6 +248,7 @@ async def main() -> None:
         await caption(
             f"Bob starts the segment (5 min by default, {DEMO_SEGMENT}s for this demo)"
         )
+        await warmup
         await bob.get_by_role("button", name="Start segment").click()
 
         for p in both:
@@ -229,7 +262,6 @@ async def main() -> None:
         )
 
         await caption("Bob runs it: Python executes in his browser via Pyodide")
-        await warmup
         await bob.get_by_role("button", name="Run Code").click()
         await bob.wait_for_timeout(2500)
         await caption("Missing Buzz! But time's nearly up…")
