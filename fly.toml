@@ -1,0 +1,29 @@
+app = "pybites-ensemble"
+primary_region = "ams"
+
+[env]
+  DATABASE_URL = "sqlite:////data/ensemble.db"
+  REDIS_URL = "redis://localhost:6379"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Stops when nobody is connected (open session tabs keep it running)
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/"
+    timeout = "5s"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

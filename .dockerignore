@@ -1,0 +1,9 @@
+.git
+.github
+.venv
+assets
+tests
+*.db
+.env
+.DS_Store
+__pycache__
