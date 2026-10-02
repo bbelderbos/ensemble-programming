@@ -395,6 +395,8 @@ def highlight_traceback(text):
 
         const pyodide = await pyodideReady;
         await pyodide.loadPackage("pytest");
+        // e.g. pydantic, which Pyodide ships but doesn't preload
+        await pyodide.loadPackagesFromImports(editor.getValue() + "\n" + challenge.tests);
         const [passed, summary, report] = pyodide.globals
             .get("run_challenge_tests")(challenge.module, editor.getValue(), challenge.tests)
             .toJs();

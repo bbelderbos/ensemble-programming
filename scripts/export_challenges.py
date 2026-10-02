@@ -6,8 +6,8 @@ from pathlib import Path
 from challenges import CHALLENGES_FILE, Challenge
 
 LEVEL_ORDER = ["Newbie", "Intro", "Beginner", "Intermediate", "Advanced"]
-# Pyodide has no network access to data files, and the FastAPI series needs extra packages
-UNSUPPORTED = re.compile(r"urlretrieve|urlopen|import requests|fastapi|pydantic")
+# Pyodide has no network access to data files, and FastAPI is not one of its packages
+UNSUPPORTED = re.compile(r"urlretrieve|urlopen|import requests|fastapi")
 
 
 def to_challenge(fields: dict) -> Challenge | None:

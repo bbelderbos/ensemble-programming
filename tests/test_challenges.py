@@ -128,3 +128,9 @@ def test_plain_session_has_no_challenge(client):
     url, _ = start(client, goal="Refactor billing")
 
     assert "def test_" not in client.get(url).text
+
+
+def test_bites_using_pydantic_are_kept_since_pyodide_ships_it():
+    fields = bite(template_code="from pydantic import BaseModel\n")["fields"]
+
+    assert to_challenge(fields) is not None

@@ -4,7 +4,6 @@ import math
 import time
 import uuid
 from dataclasses import asdict
-from itertools import groupby
 
 import redis
 from decouple import config
@@ -92,15 +91,7 @@ def init_db():
 @app.get("/")
 async def home(request: Request):
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            # Already ordered by level, so groupby keeps Intro before Beginner
-            "challenge_levels": [
-                (level, list(group))
-                for level, group in groupby(CHALLENGES.values(), key=lambda c: c.level)
-            ],
-        },
+        "index.html", {"request": request, "challenges": CHALLENGES.values()}
     )
 
 
