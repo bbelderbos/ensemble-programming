@@ -42,10 +42,10 @@ Tests use fakeredis, so they don't need a running Redis.
 ### Manual test: running code
 
 1. Open `localhost:8000`, create a session, enter a name.
-2. Type `x = 1; print("hi", x)` and click **Run Code** → Stdout shows `hi 1`. The first run takes a few seconds while Pyodide (~10 MB) downloads; later runs are instant.
-3. Replace the code with `print(x)` and run → Stderr shows `NameError`, because each run starts with a fresh namespace.
-4. Run `import sys; print("oops", file=sys.stderr)` → `oops` appears under Stderr.
-5. Run `1/0` → Stderr shows a `ZeroDivisionError` traceback and the button is clickable again.
+2. Type `x = 1; print("hi", x)` and click **Run Code** → the output panel shows `✓ Finished` and `hi 1`. The first run takes a few seconds while Pyodide (~10 MB) downloads; later runs are instant.
+3. Replace the code with `print(x)` and run → `✗ NameError`, because each run starts with a fresh namespace.
+4. Run `import sys; print("oops", file=sys.stderr)` → `oops` appears in the stderr section.
+5. Run `1/0` → a highlighted traceback pointing at `1/0`, without Pyodide's internal frames, and the button is clickable again.
 6. Open the session link in a 2nd browser, run code there → output only appears in that browser (execution is local to each participant).
 
 ## Re-recording the demo

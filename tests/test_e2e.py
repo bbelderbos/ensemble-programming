@@ -75,4 +75,25 @@ def test_code_runs_in_the_browser(live_server, context):
     alice.click("#run-button")
 
     # First run downloads Pyodide from the CDN
-    expect(alice.locator("#output")).to_contain_text("hi 2", timeout=60_000)
+    expect(alice.locator("#output-status")).to_contain_text("Finished", timeout=60_000)
+    expect(alice.locator("#stdout")).to_have_text("hi 2")
+    expect(alice.locator("#stderr")).to_be_hidden()
+
+
+def test_errors_show_a_clean_highlighted_traceback(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    expect(alice.locator("#editor-status")).to_have_text("You're driving.")
+
+    alice.locator(".CodeMirror").click()
+    alice.keyboard.type('print("before")\n1/0')
+    alice.click("#run-button")
+
+    status = alice.locator("#output-status")
+    expect(status).to_contain_text("ZeroDivisionError", timeout=60_000)
+    expect(alice.locator("#stdout")).to_have_text("before")
+    stderr = alice.locator("#stderr")
+    expect(stderr).to_contain_text('File "<editor>", line 2')
+    expect(stderr).to_contain_text("1/0")  # the offending source line
+    expect(stderr).not_to_contain_text("_pyodide")
+    # Pygments wraps tokens in colored spans
+    assert stderr.locator("span[style*=color]").count() > 0

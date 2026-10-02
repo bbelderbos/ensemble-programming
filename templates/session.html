@@ -32,7 +32,11 @@
         Run Code
       </button>
 
-      <pre id="output" class="mt-4 p-4 rounded-md whitespace-pre-wrap break-words"></pre>
+      <div id="output" hidden class="mt-4 rounded-md overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
+        <div id="output-status" class="px-4 py-2 bg-gray-800 text-xs font-sans font-semibold"></div>
+        <pre id="stdout" class="px-4 py-3 whitespace-pre-wrap break-words"></pre>
+        <pre id="stderr" class="px-4 py-3 whitespace-pre-wrap break-words border-t border-gray-700"></pre>
+      </div>
 
     </div>
 
@@ -190,14 +194,52 @@
         }
     });
 
+    // Runs user code with its own traceback so Pyodide's internal frames stay hidden,
+    // and renders tracebacks as highlighted HTML with Pygments
+    const RUNNER = `
+import linecache, traceback
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import PythonTracebackLexer
+
+def run_user_code(source):
+    # Lets tracebacks show the offending source lines
+    linecache.cache["<editor>"] = (len(source), None, source.splitlines(True), "<editor>")
+    try:
+        exec(compile(source, "<editor>", "exec"), {"__name__": "__main__"})
+    except BaseException as exc:
+        traceback.print_exception(type(exc), exc, exc.__traceback__.tb_next)
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+def highlight_traceback(text):
+    return highlight(text, PythonTracebackLexer(), HtmlFormatter(nowrap=True, noclasses=True, style="monokai"))
+`;
+
     // Code runs in each user's browser, so a runaway loop only freezes that tab
-    let pyodideReady = loadPyodide();
+    let pyodideReady = loadPyodide().then(async pyodide => {
+        await pyodide.loadPackage("pygments");
+        pyodide.runPython(RUNNER);
+        return pyodide;
+    });
+
+    function showOutput(status, ok, stdout, stderrHTML) {
+        const statusEl = document.getElementById("output-status");
+        statusEl.textContent = status;
+        statusEl.className = statusEl.className.replace(/text-(green|red)-400/g, "") + (ok ? " text-green-400" : " text-red-400");
+        const stdoutEl = document.getElementById("stdout");
+        stdoutEl.textContent = stdout.replace(/\n$/, "");
+        stdoutEl.hidden = !stdout;
+        const stderrEl = document.getElementById("stderr");
+        stderrEl.innerHTML = stderrHTML;
+        stderrEl.hidden = !stderrHTML;
+        document.getElementById("output").hidden = false;
+    }
 
     async function runCode() {
-        const output = document.getElementById("output");
         const button = document.getElementById("run-button");
         button.disabled = true;
-        output.innerText = "Running...";
+        showOutput("Running…", true, "", "");
 
         const pyodide = await pyodideReady;
         let stdout = "";
@@ -205,16 +247,13 @@
         pyodide.setStdout({ batched: line => stdout += line + "\n" });
         pyodide.setStderr({ batched: line => stderr += line + "\n" });
 
-        const freshGlobals = pyodide.globals.get("dict")();
-        try {
-            await pyodide.runPythonAsync(editor.getValue(), { globals: freshGlobals });
-        } catch (error) {
-            stderr += error.message;
-        } finally {
-            freshGlobals.destroy();
-            button.disabled = false;
-        }
-        output.innerText = "Stdout:\n" + stdout + "\nStderr:\n" + stderr;
+        const started = performance.now();
+        const error = pyodide.globals.get("run_user_code")(editor.getValue());
+        const elapsed = Math.round(performance.now() - started);
+        button.disabled = false;
+
+        const stderrHTML = stderr ? pyodide.globals.get("highlight_traceback")(stderr) : "";
+        showOutput(error ? `✗ ${error}` : `✓ Finished in ${elapsed} ms`, !error, stdout, stderrHTML);
     }
   </script>
 
