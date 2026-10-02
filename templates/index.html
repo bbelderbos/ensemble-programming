@@ -19,7 +19,7 @@
         <h2 class="text-lg font-semibold">Start a session</h2>
         <form hx-post="/new-session" hx-trigger="submit" hx-redirect="true" class="mt-4 flex flex-col sm:flex-row gap-3">
           <label class="sr-only" for="goal">Goal</label>
-          <input id="goal" type="text" name="goal" required placeholder="Goal, e.g. refactor the billing module"
+          <input id="goal" type="text" name="goal" required placeholder="Goal, e.g. a FizzBuzz kata"
                  class="flex-1 p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
           <button type="submit" class="bg-indigo-600 text-white font-semibold px-6 py-3 rounded-lg hover:bg-indigo-700">Create Session</button>
         </form>
