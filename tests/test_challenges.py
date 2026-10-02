@@ -1,7 +1,9 @@
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 
+import main
 from challenges import Challenge, load_challenges
 from scripts.export_challenges import export, to_challenge
 
@@ -82,3 +84,47 @@ def test_export_keeps_only_bites_ordered_by_level(tmp_path):
         "alpha",
         "zeta",
     ]
+
+
+@pytest.fixture
+def client():
+    with TestClient(main.app) as client:
+        yield client
+
+
+def start(client, **form):
+    response = client.post("/new-session", data=form)
+    return response.headers.get("HX-Redirect"), response
+
+
+def test_landing_page_offers_the_challenges(client):
+    page = client.get("/").text
+
+    for challenge in main.CHALLENGES.values():
+        assert challenge.title in page
+
+
+def test_starting_from_a_challenge_seeds_the_editor_and_shows_the_tests(client):
+    challenge = main.CHALLENGES["sum-n-numbers"]
+
+    url, _ = start(client, goal=challenge.title, challenge=challenge.slug)
+    session_id = url.rsplit("/", 1)[1]
+    page = client.get(url).text
+
+    assert (
+        main.redis_client.get(main.key(session_id, "code")) == challenge.template_code
+    )
+    assert "def test_sum_numbers_default_args" in page
+    assert "the sum of a list" in page
+
+
+def test_unknown_challenge_is_rejected(client):
+    _, response = start(client, goal="x", challenge="does-not-exist")
+
+    assert response.status_code == 400
+
+
+def test_plain_session_has_no_challenge(client):
+    url, _ = start(client, goal="Refactor billing")
+
+    assert "def test_" not in client.get(url).text

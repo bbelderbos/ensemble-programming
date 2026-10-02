@@ -61,6 +61,34 @@
     </div>
   </section>
 
+  <section id="challenges" class="py-14">
+    <h2 class="text-3xl font-bold text-center">Need an idea? Start from a challenge</h2>
+    <p class="mt-3 text-center text-gray-600 max-w-2xl mx-auto">
+      Free Python exercises with ready-made pytest tests. The session opens with the starter
+      code, and <strong>Run tests</strong> shows how close the team is.
+    </p>
+    <div class="mt-10 grid md:grid-cols-3 gap-6">
+      {% for level, challenges in challenge_levels %}
+      <div>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">{{ level }}</h3>
+        <ul class="mt-3 space-y-2">
+          {% for challenge in challenges %}
+          <li>
+            <form hx-post="/new-session" hx-trigger="submit">
+              <input type="hidden" name="goal" value="{{ challenge.title }}">
+              <input type="hidden" name="challenge" value="{{ challenge.slug }}">
+              <button type="submit" class="w-full text-left bg-white px-4 py-3 rounded-lg shadow-sm ring-1 ring-gray-200 hover:ring-indigo-400 hover:text-indigo-700">
+                {{ challenge.title }}
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
   <section class="py-14">
     <h2 class="text-3xl font-bold text-center">How it works</h2>
     <ol class="mt-10 grid md:grid-cols-3 gap-6">

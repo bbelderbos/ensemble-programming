@@ -97,3 +97,34 @@ def test_errors_show_a_clean_highlighted_traceback(live_server, context):
     expect(stderr).not_to_contain_text("_pyodide")
     # Pygments wraps tokens in colored spans
     assert stderr.locator("span[style*=color]").count() > 0
+
+
+SUM_SOLUTION = """def sum_numbers(numbers=None):
+    if numbers is None:
+        numbers = range(1, 101)
+    return sum(numbers)
+"""
+
+
+def test_challenge_tests_run_in_the_browser(live_server, context):
+    alice = context.new_page()
+    alice.goto(live_server)
+    alice.get_by_role("button", name="Sum n numbers").click()
+    alice.wait_for_url(re.compile("/session/"))
+    join(alice, "Alice")
+    expect(alice.locator("#editor-status")).to_have_text("You're driving.")
+    expect(alice.locator(".CodeMirror")).to_contain_text("def sum_numbers")
+
+    alice.click("#test-button")
+    status = alice.locator("#output-status")
+    expect(status).to_contain_text("failed", timeout=90_000)
+
+    alice.evaluate("code => editor.setValue(code)", SUM_SOLUTION)
+    alice.click("#test-button")
+    expect(status).to_contain_text("2 passed", timeout=30_000)
+
+
+def test_plain_sessions_have_no_test_button(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    expect(alice.locator("#editor-status")).to_have_text("You're driving.")
+    expect(alice.locator("#test-button")).to_have_count(0)

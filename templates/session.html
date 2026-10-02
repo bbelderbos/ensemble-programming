@@ -20,6 +20,17 @@
     </div>
   </div>
 
+  {% if challenge %}
+  <details id="challenge" open class="bg-white shadow-md p-6 rounded-lg mb-6">
+    <summary class="cursor-pointer text-xl font-semibold">Challenge: {{ challenge.title }} <span class="ml-2 text-sm font-medium text-gray-500">{{ challenge.level }}</span></summary>
+    <div class="challenge-description mt-3 text-gray-700 space-y-2">{{ challenge.description | safe }}</div>
+    <details class="mt-4">
+      <summary class="cursor-pointer font-medium text-indigo-600">Show the tests ({{ challenge.module }}.py must pass these)</summary>
+      <pre id="challenge-tests" class="mt-2 p-4 rounded-md bg-gray-900 text-gray-100 text-sm overflow-x-auto">{{ challenge.tests }}</pre>
+    </details>
+  </details>
+  {% endif %}
+
   <div class="grid grid-cols-2 gap-6">
 
     <!-- Left Column: Code Editor -->
@@ -31,6 +42,11 @@
       <button id="run-button" onclick="runCode()" class="bg-indigo-500 text-white font-semibold px-4 py-2 mt-4 rounded-md">
         Run Code
       </button>
+      {% if challenge %}
+      <button id="test-button" onclick="runTests()" class="bg-green-600 text-white font-semibold px-4 py-2 mt-4 ml-2 rounded-md">
+        Run tests
+      </button>
+      {% endif %}
 
       <div id="output" hidden class="mt-4 rounded-md overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
         <div id="output-status" class="px-4 py-2 bg-gray-800 text-xs font-sans font-semibold"></div>
@@ -212,6 +228,35 @@ def run_user_code(source):
         return f"{type(exc).__name__}: {exc}"
     return None
 
+def run_challenge_tests(module, code, tests):
+    import contextlib, io, os, sys
+    import pytest
+
+    folder = "/challenge"
+    os.makedirs(folder, exist_ok=True)
+    with open(f"{folder}/{module}.py", "w") as f:
+        f.write(code)
+    with open(f"{folder}/test_{module}.py", "w") as f:
+        f.write(tests)
+    if folder not in sys.path:
+        sys.path.insert(0, folder)
+    # Re-import the latest editor code on every run
+    sys.modules.pop(module, None)
+    sys.modules.pop(f"test_{module}", None)
+    sys.dont_write_bytecode = True
+    # Fit pytest's separators to the output panel and keep paths short
+    os.environ["COLUMNS"] = "56"
+    os.chdir(folder)
+
+    report = io.StringIO()
+    with contextlib.redirect_stdout(report):
+        exit_code = pytest.main(
+            ["-q", "--no-header", "--tb=short", "-rN", "-p", "no:cacheprovider", "--capture=sys", "."]
+        )
+    lines = report.getvalue().strip().splitlines()
+    summary = lines[-1].strip("= ") if lines else "no tests ran"
+    return int(exit_code) == 0, summary, report.getvalue()
+
 def highlight_traceback(text):
     return highlight(text, PythonTracebackLexer(), HtmlFormatter(nowrap=True, noclasses=True, style="monokai"))
 `;
@@ -234,6 +279,22 @@ def highlight_traceback(text):
         stderrEl.innerHTML = stderrHTML;
         stderrEl.hidden = !stderrHTML;
         document.getElementById("output").hidden = false;
+    }
+
+    const challenge = {{ challenge.model_dump() | tojson if challenge else "null" }};
+
+    async function runTests() {
+        const button = document.getElementById("test-button");
+        button.disabled = true;
+        showOutput("Running tests…", true, "", "");
+
+        const pyodide = await pyodideReady;
+        await pyodide.loadPackage("pytest");
+        const [passed, summary, report] = pyodide.globals
+            .get("run_challenge_tests")(challenge.module, editor.getValue(), challenge.tests)
+            .toJs();
+        button.disabled = false;
+        showOutput(passed ? `✓ ${summary}` : `✗ ${summary}`, passed, report, "");
     }
 
     async function runCode() {

@@ -4,12 +4,14 @@ import math
 import time
 import uuid
 from dataclasses import asdict
+from itertools import groupby
 
 import redis
 from decouple import config
 from fastapi import (
     FastAPI,
     Form,
+    HTTPException,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -19,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
+from challenges import load_challenges
 from rotation import Roles, assign_roles
 
 DATABASE_URL = config("DATABASE_URL")
@@ -29,6 +32,7 @@ templates = Jinja2Templates(directory="templates")
 
 redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
+CHALLENGES = load_challenges()
 ROTATION_SECONDS = config("ROTATION_SECONDS", default=300, cast=int)
 
 
@@ -87,30 +91,48 @@ def init_db():
 
 @app.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            # Already ordered by level, so groupby keeps Intro before Beginner
+            "challenge_levels": [
+                (level, list(group))
+                for level, group in groupby(CHALLENGES.values(), key=lambda c: c.level)
+            ],
+        },
+    )
 
 
 @app.post("/new-session")
-async def new_session(goal: str = Form(...)):
-    """Creates a new coding session with a unique ID."""
+async def new_session(goal: str = Form(...), challenge: str | None = Form(None)):
+    """Creates a new coding session, optionally starting from a challenge."""
+    if challenge and challenge not in CHALLENGES:
+        raise HTTPException(status_code=400, detail=f"Unknown challenge {challenge}")
+
     with Session(engine) as session:
         new_session = SessionModel(goal=goal)
         session.add(new_session)
         session.commit()
-        return JSONResponse(
-            content={}, headers={"HX-Redirect": f"/session/{new_session.id}"}
-        )
+        session_id = new_session.id
+
+    if challenge:
+        redis_client.set(key(session_id, "challenge"), challenge)
+        redis_client.set(key(session_id, "code"), CHALLENGES[challenge].template_code)
+    return JSONResponse(content={}, headers={"HX-Redirect": f"/session/{session_id}"})
 
 
 @app.get("/session/{session_id}")
 async def session_page(request: Request, session_id: str):
     """Returns the session page with real-time code editor."""
+    slug = redis_client.get(key(session_id, "challenge"))
     return templates.TemplateResponse(
         "session.html",
         {
             "request": request,
             "session_id": session_id,
             "rotation_seconds": ROTATION_SECONDS,
+            "challenge": CHALLENGES.get(slug) if slug else None,
         },
     )
 
