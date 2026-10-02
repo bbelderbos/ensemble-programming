@@ -4,7 +4,7 @@ A shared Python editor for mob/ensemble programming: the whole team works on one
 
 [![Demo: Alice and Bob solve FizzBuzz together](assets/demo.png)](assets/demo.mp4)
 
-▶️ [Watch the 1-minute demo](assets/demo.mp4)
+**Try it: [ensemble-programming.fly.dev](https://ensemble-programming.fly.dev)** · ▶️ [Watch the 1-minute demo](assets/demo.mp4)
 
 ## Features
 
@@ -23,10 +23,10 @@ Set `ROTATION_SECONDS` in `.env` to change the segment length (default 300).
 ## Quickstart
 
 ```bash
-uv sync
+make install                # uv sync + Playwright's Chromium for the browser tests
 cp .env-template .env
-docker run -d --name redis -p 6379:6379 redis
-uv run fastapi dev main.py
+make redis                  # or: docker run -d --name redis -p 6379:6379 redis
+make dev
 ```
 
 Open `localhost:8000`, create a session, then open the session link in a second browser to join. The timekeeper presses **Start segment** to begin.
@@ -34,7 +34,7 @@ Open `localhost:8000`, create a session, then open the session link in a second 
 ## Tests
 
 ```bash
-uv run pytest -q
+make test     # or `make check` to format, lint and test
 ```
 
 Tests use fakeredis, so they don't need a running Redis.
@@ -58,3 +58,12 @@ uv run --with playwright python assets/record_demo.py
 ```
 
 Needs ffmpeg and a Playwright Chromium (`uvx playwright install chromium`). Writes `assets/demo.mp4`.
+
+## Deploy
+
+Runs on [Fly.io](https://fly.io) as one small machine that stops when idle, with SQLite and Redis on a volume (see `fly.toml`). It must stay a single machine: segment timers and connections live in the process.
+
+```bash
+make deploy   # fly deploy --ha=false; uses FLY_API_TOKEN if set
+make logs
+```
