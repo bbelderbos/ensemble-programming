@@ -51,17 +51,24 @@ class ConnectionManager:
 
     def disconnect(self, session_id: str, websocket: WebSocket):
         """Remove disconnected clients from active connections."""
-        self.active_connections[session_id].remove(websocket)
-        if not self.active_connections[session_id]:
+        connections = self.active_connections.get(session_id, [])
+        if websocket in connections:
+            connections.remove(websocket)
+        if not connections and session_id in self.active_connections:
             del self.active_connections[session_id]
 
     async def broadcast(
         self, session_id: str, message: str, exclude: WebSocket | None = None
     ):
         """Send message to all connected clients in a session."""
-        for connection in self.active_connections.get(session_id, []):
-            if connection is not exclude:
+        for connection in list(self.active_connections.get(session_id, [])):
+            if connection is exclude:
+                continue
+            try:
                 await connection.send_text(message)
+            except (WebSocketDisconnect, RuntimeError):
+                # Closed tab whose disconnect isn't processed yet; skip it
+                self.disconnect(session_id, connection)
 
 
 manager = ConnectionManager()
