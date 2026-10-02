@@ -134,3 +134,62 @@ def test_bites_using_pydantic_are_kept_since_pyodide_ships_it():
     fields = bite(template_code="from pydantic import BaseModel\n")["fields"]
 
     assert to_challenge(fields) is not None
+
+
+TEMPLATE = "def uppercase_vowels(text: str) -> str:\n    pass\n"
+
+
+@pytest.mark.parametrize(
+    ("tests", "expected_call"),
+    [
+        (
+            'def test_a():\n    assert uppercase_vowels("Hi you") == "hI yOU"\n',
+            'uppercase_vowels("Hi you")',
+        ),
+        (
+            'def test_a(text):\n    uppercase_vowels(text)\n    uppercase_vowels(text="ok")\n',
+            'uppercase_vowels(text="ok")',
+        ),
+    ],
+    ids=["first-literal-call", "skips-calls-with-variables"],
+)
+def test_starter_code_gets_a_runnable_example_from_the_tests(tests, expected_call):
+    template = to_challenge(
+        bite(template_code=TEMPLATE, tests=tests)["fields"]
+    ).template_code
+
+    assert (
+        template
+        == TEMPLATE + f'\n\nif __name__ == "__main__":\n    print({expected_call})\n'
+    )
+
+
+@pytest.mark.parametrize(
+    "template",
+    [TEMPLATE, 'def ask():\n    return input("Color? ")\n'],
+    ids=["no-literal-call", "reads-input"],
+)
+def test_no_example_when_none_is_safe(template):
+    tests = "def test_a(x):\n    assert uppercase_vowels(x)\n    ask()\n"
+
+    assert (
+        to_challenge(bite(template_code=template, tests=tests)["fields"]).template_code
+        == template
+    )
+
+
+def test_no_example_when_the_tests_fake_user_input():
+    tests = '@patch("builtins.input", side_effect=["red"])\ndef test_a(i):\n    uppercase_vowels()\n'
+    fields = bite(template_code=TEMPLATE, tests=tests)["fields"]
+
+    assert to_challenge(fields).template_code == TEMPLATE
+
+
+def test_existing_main_block_is_left_alone():
+    template = TEMPLATE + '\nif __name__ == "__main__":\n    uppercase_vowels("x")\n'
+    tests = 'def test_a():\n    assert uppercase_vowels("Hi")\n'
+
+    assert (
+        to_challenge(bite(template_code=template, tests=tests)["fields"]).template_code
+        == template
+    )
