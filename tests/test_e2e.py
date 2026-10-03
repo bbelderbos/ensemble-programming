@@ -299,3 +299,19 @@ def test_timekeeper_sets_length_and_anyone_rotating_can_pause(live_server, conte
     expect(bob.locator("#segment-label")).to_contain_text("Paused")
     bob.click("#resume-button")
     expect(alice.locator("#segment-label")).to_contain_text("next segment starts")
+
+
+def test_driver_typing_keeps_the_navigators_scroll_position(live_server, context):
+    alice = driving_alice(context, live_server)
+    bob = open_and_join(context, alice.url, "Bob")
+    long_code = "\n".join(f"x{i} = {i}" for i in range(200))
+    alice.evaluate("code => editor.setValue(code)", long_code)
+    expect(bob.locator(".CodeMirror")).to_contain_text("x199 = 199")
+
+    bob.evaluate("editor.scrollTo(null, 2000)")
+    scrolled = bob.evaluate("editor.getScrollInfo().top")
+    assert scrolled > 0
+
+    alice.evaluate("editor.replaceRange('\\ny = 1', {line: editor.lastLine()})")
+    bob.wait_for_function("editor.getValue().endsWith('y = 1')")
+    assert bob.evaluate("editor.getScrollInfo().top") == scrolled

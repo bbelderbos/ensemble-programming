@@ -167,9 +167,12 @@
 
         if (message.type === "code") {
             if (editor.getValue() !== message.content) {
+                // setValue jumps to the top, which loses the reader's place
+                const { left, top } = editor.getScrollInfo();
                 isUpdatingFromServer = true;
                 editor.setValue(message.content);
                 isUpdatingFromServer = false;
+                editor.scrollTo(left, top);
             }
         } else if (message.type === "typing") {
             document.getElementById("typing-indicator").textContent = `${message.username} is typing...`;
