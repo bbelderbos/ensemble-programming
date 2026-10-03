@@ -192,6 +192,7 @@
 
     function readOnlyMessage() {
         const driver = rotation.driver;
+        if (driver === username) return "You're driving.";
         if (rotation.navigator === username) return `${driver} is driving. You're navigating: tell them what to type.`;
         if (rotation.observers.includes(username)) return `${driver} is driving. You're watching; you can still run the code.`;
         return `${driver} is driving. Only the driver types; you can still run the code.`;

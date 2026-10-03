@@ -45,6 +45,9 @@ def test_roles_rotate_and_only_the_driver_types(live_server, context, monkeypatc
     expect(bob.locator("#editor-status")).to_have_text("Alice is driving.")
     expect(carol.locator("#editor-status")).to_have_text("Alice is driving.")
     expect(alice.locator("#observer-list")).to_have_text("Carol")
+    expect(alice.locator("#readonly-banner")).to_be_hidden()
+    expect(alice.locator("#readonly-message")).to_have_text("You're driving.")
+    expect(bob.locator("#readonly-message")).to_contain_text("You're navigating")
     assert not is_read_only(alice)
     assert is_read_only(bob) and is_read_only(carol)
 
