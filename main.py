@@ -33,6 +33,7 @@ redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 CHALLENGES = load_challenges()
 ROTATION_SECONDS = config("ROTATION_SECONDS", default=300, cast=int)
+MAX_SEGMENT_MINUTES = 30
 
 
 class SessionModel(SQLModel, table=True):
@@ -124,7 +125,7 @@ async def session_page(request: Request, session_id: str):
         {
             "request": request,
             "session_id": session_id,
-            "rotation_seconds": ROTATION_SECONDS,
+            "max_segment_minutes": MAX_SEGMENT_MINUTES,
             "challenge": CHALLENGES.get(slug) if slug else None,
             "goal": session_obj.goal if session_obj else "Ensemble session",
         },
@@ -183,15 +184,28 @@ def current_roles(session_id: str) -> Roles:
     return assign_roles(participants, segment)
 
 
+def segment_seconds(session_id: str) -> float:
+    seconds = redis_client.get(key(session_id, "segment_seconds"))
+    return float(seconds) if seconds else ROTATION_SECONDS
+
+
+def in_rotation(session_id: str, username: str) -> bool:
+    return username in redis_client.lrange(key(session_id, "participants"), 0, -1)
+
+
 def rotation_state(session_id: str) -> dict:
     ends_at = redis_client.get(key(session_id, "ends_at"))
+    paused = redis_client.get(key(session_id, "paused"))
     return {
         "type": "rotation",
         "participants": redis_client.lrange(key(session_id, "participants"), 0, -1),
         "observers": sorted(redis_client.smembers(key(session_id, "observers"))),
         **asdict(current_roles(session_id)),
-        # None means the team is on a debrief break between segments
+        # None means the team is on a debrief break, or paused
         "remaining": math.ceil(float(ends_at) - time.time()) if ends_at else None,
+        "paused": float(paused) if paused else None,
+        "segment_seconds": segment_seconds(session_id),
+        "auto": bool(redis_client.exists(key(session_id, "auto"))),
     }
 
 
@@ -199,11 +213,25 @@ async def broadcast_rotation(session_id: str) -> None:
     await rotation_manager.broadcast(session_id, json.dumps(rotation_state(session_id)))
 
 
+def begin_segment(session_id: str, seconds: float) -> None:
+    redis_client.set(key(session_id, "ends_at"), time.time() + seconds)
+    segment_timers[session_id] = asyncio.create_task(
+        end_segment_after(session_id, seconds)
+    )
+
+
+def next_segment(session_id: str) -> None:
+    redis_client.incr(key(session_id, "segment"))
+    keep_rotating = redis_client.exists(key(session_id, "auto"))
+    if keep_rotating and redis_client.llen(key(session_id, "participants")):
+        begin_segment(session_id, segment_seconds(session_id))
+
+
 async def end_segment_after(session_id: str, seconds: float) -> None:
     await asyncio.sleep(seconds)
     # Zero deletes means another path already ended this segment
     if redis_client.delete(key(session_id, "ends_at")):
-        redis_client.incr(key(session_id, "segment"))
+        next_segment(session_id)
         await broadcast_rotation(session_id)
 
 
@@ -223,13 +251,10 @@ async def resume_segment(session_id: str) -> None:
 
 
 def start_segment(session_id: str, username: str) -> bool:
-    running = redis_client.exists(key(session_id, "ends_at"))
-    if running or username != current_roles(session_id).timekeeper:
+    busy = redis_client.exists(key(session_id, "ends_at"), key(session_id, "paused"))
+    if busy or username != current_roles(session_id).timekeeper:
         return False
-    redis_client.set(key(session_id, "ends_at"), time.time() + ROTATION_SECONDS)
-    segment_timers[session_id] = asyncio.create_task(
-        end_segment_after(session_id, ROTATION_SECONDS)
-    )
+    begin_segment(session_id, segment_seconds(session_id))
     return True
 
 
@@ -239,8 +264,47 @@ def rotate_now(session_id: str, username: str) -> bool:
         return False
     if timer := segment_timers.pop(session_id, None):
         timer.cancel()
+    redis_client.delete(key(session_id, "ends_at"), key(session_id, "paused"))
+    next_segment(session_id)
+    return True
+
+
+def pause_clock(session_id: str, username: str) -> bool:
+    ends_at = redis_client.get(key(session_id, "ends_at"))
+    if not ends_at or not in_rotation(session_id, username):
+        return False
+    if timer := segment_timers.pop(session_id, None):
+        timer.cancel()
     redis_client.delete(key(session_id, "ends_at"))
-    redis_client.incr(key(session_id, "segment"))
+    redis_client.set(key(session_id, "paused"), max(0, float(ends_at) - time.time()))
+    return True
+
+
+def resume_clock(session_id: str, username: str) -> bool:
+    paused = redis_client.get(key(session_id, "paused"))
+    if not paused or not in_rotation(session_id, username):
+        return False
+    redis_client.delete(key(session_id, "paused"))
+    begin_segment(session_id, float(paused))
+    return True
+
+
+def set_length(session_id: str, username: str, minutes: object) -> bool:
+    """Applies from the next segment on."""
+    valid = type(minutes) is int and 1 <= minutes <= MAX_SEGMENT_MINUTES
+    if not valid or username != current_roles(session_id).timekeeper:
+        return False
+    redis_client.set(key(session_id, "segment_seconds"), minutes * 60)
+    return True
+
+
+def set_auto(session_id: str, username: str, on: bool) -> bool:
+    if username != current_roles(session_id).timekeeper:
+        return False
+    if on:
+        redis_client.set(key(session_id, "auto"), 1)
+    else:
+        redis_client.delete(key(session_id, "auto"))
     return True
 
 
@@ -269,6 +333,22 @@ async def websocket_rotation(session_id: str, websocket: WebSocket):
 
             elif message["type"] == "rotate":
                 if not rotate_now(session_id, message["username"]):
+                    continue
+
+            elif message["type"] == "pause":
+                if not pause_clock(session_id, message["username"]):
+                    continue
+
+            elif message["type"] == "resume":
+                if not resume_clock(session_id, message["username"]):
+                    continue
+
+            elif message["type"] == "set_length":
+                if not set_length(session_id, message["username"], message["minutes"]):
+                    continue
+
+            elif message["type"] == "set_auto":
+                if not set_auto(session_id, message["username"], bool(message["on"])):
                     continue
 
             await broadcast_rotation(session_id)

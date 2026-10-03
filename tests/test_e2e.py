@@ -271,3 +271,31 @@ def test_names_are_shown_as_text_not_html(live_server, context):
 
     expect(alice.locator("#participant-list")).to_contain_text("<b>Al</b>")
     expect(alice.locator("#participant-list b")).to_have_count(0)
+
+
+def test_copy_code(live_server, context):
+    context.grant_permissions(["clipboard-read", "clipboard-write"])
+    alice = driving_alice(context, live_server)
+    alice.keyboard.type("x = 1")
+    alice.click("#copy-code")
+
+    expect(alice.locator("#copy-code")).to_contain_text("Copied!")
+    assert alice.evaluate("navigator.clipboard.readText()") == "x = 1"
+
+
+def test_timekeeper_sets_length_and_anyone_rotating_can_pause(live_server, context):
+    alice = join(create_session(context, live_server), "Alice")
+    bob = open_and_join(context, alice.url, "Bob")
+
+    expect(alice.locator("#length-input")).to_be_disabled()
+    bob.fill("#length-input", "2")
+    bob.locator("#length-input").blur()
+    expect(alice.locator("#time-remaining")).to_have_text("2:00")
+    bob.check("#auto-input")
+    expect(alice.locator("#auto-input")).to_be_checked()
+
+    bob.click("#start-button")
+    alice.click("#pause-button")
+    expect(bob.locator("#segment-label")).to_contain_text("Paused")
+    bob.click("#resume-button")
+    expect(alice.locator("#segment-label")).to_contain_text("next segment starts")

@@ -209,3 +209,80 @@ def test_rotating_during_a_break_moves_to_the_next_driver():
         state = receive_state(ws)
 
     assert (state["driver"], state["timekeeper"]) == ("bob", "ann")
+
+
+def join_all(ws, *names):
+    for name in names:
+        send(ws, type="join", username=name, participate=True)
+        receive_state(ws)
+
+
+def test_timekeeper_sets_the_segment_length():
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        join_all(ws, "ann", "bob")
+        send(ws, type="set_length", username="ann", minutes=10)  # not timekeeper
+        for invalid in (0, 31, "5", 2.5):
+            send(ws, type="set_length", username="bob", minutes=invalid)
+        send(ws, type="set_length", username="bob", minutes=10)
+        state = receive_state(ws)
+        assert state["segment_seconds"] == 600
+
+        send(ws, type="start", username="bob")
+        state = receive_state(ws)
+
+    assert state["remaining"] == 600
+
+
+def test_keep_rotating_starts_the_next_segment_without_a_break(monkeypatch):
+    monkeypatch.setattr(main, "ROTATION_SECONDS", 0.05)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        join_all(ws, "ann", "bob")
+        send(ws, type="set_auto", username="ann", on=True)  # not timekeeper
+        send(ws, type="set_auto", username="bob", on=True)
+        assert receive_state(ws)["auto"] is True
+
+        send(ws, type="start", username="bob")
+        receive_state(ws)
+        after = receive_state(ws)
+
+    assert after["driver"] == "bob"
+    assert after["remaining"] is not None
+
+
+def test_anyone_in_the_rotation_can_pause_and_resume(monkeypatch):
+    monkeypatch.setattr(main, "ROTATION_SECONDS", 0.1)
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        join_all(ws, "ann", "bob")
+        send(ws, type="join", username="obi", participate=False)
+        receive_state(ws)
+        send(ws, type="start", username="bob")
+        receive_state(ws)
+
+        send(ws, type="pause", username="obi")  # observers can't pause
+        send(ws, type="pause", username="ann")
+        paused = receive_state(ws)
+        # A paused clock must not end the segment
+        time.sleep(0.2)
+        send(ws, type="resume", username="obi")
+        send(ws, type="resume", username="ann")
+        resumed = receive_state(ws)
+
+    assert paused["remaining"] is None
+    assert 0 < paused["paused"] <= 0.1
+    assert resumed["driver"] == "ann"
+    assert resumed["paused"] is None
+    assert resumed["remaining"] is not None
+
+
+def test_rotating_while_paused_clears_the_pause():
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        join_all(ws, "ann", "bob")
+        send(ws, type="start", username="bob")
+        receive_state(ws)
+        send(ws, type="pause", username="ann")
+        receive_state(ws)
+        send(ws, type="rotate", username="bob")
+        state = receive_state(ws)
+
+    assert state["paused"] is None
+    assert state["driver"] == "bob"

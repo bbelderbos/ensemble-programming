@@ -1,6 +1,6 @@
 # Ensemble Programming
 
-A shared Python editor for practicing mob/ensemble programming: the whole team solves one problem together in real time, in timed segments with rotating roles.
+A shared Python editor for practicing mob/ensemble programming, with your team or a learning community: everyone solves one problem together in real time, in timed segments with rotating roles.
 
 [![Demo: Alice and Bob solve FizzBuzz together](static/demo.png)](https://ensemble-programming.fly.dev/#demo)
 
@@ -10,17 +10,19 @@ A shared Python editor for practicing mob/ensemble programming: the whole team s
 
 - **Live shared editor**: every keystroke streams to everyone in the session. Only the driver can type.
 - **Rotating roles**: driver, navigator and timekeeper rotate each segment, so the navigator drives next. With two people the navigator also keeps time.
-- **Timed segments with a debrief**: segments last 5 minutes. When time is up, roles rotate and the team takes a break until the timekeeper starts the next segment.
+- **Timed segments**: the timekeeper sets the length (1–30 minutes, default 5). When time is up, roles rotate and the group takes a debrief break until the timekeeper starts the next segment, or, with **Keep rotating** on, the next segment starts right away.
+- **Pause**: anyone in the rotation can pause the clock when they get interrupted, and resume it.
 - **Observers**: uncheck "Take part in the rotation" when joining to sit in and watch without taking a turn.
 - **Starter challenges**: pick one of 15 free [Pybites Platform](https://pybitesplatform.com) exercises on the landing page. The session opens with the starter code and a **Run tests** button that runs the exercise's pytest tests in the browser. `make challenges` re-exports them from the platform's catalog (never including solutions).
 - **IDE basics, no AI**: Jedi completions (Ctrl-Space, or after a `.`), Ruff warnings as you type and a **Format** button, auto-closing brackets, Cmd/Ctrl-/ to toggle line comments, Cmd/Ctrl-Enter to run (add Shift to run a challenge's tests). All of it runs in the browser.
+- **Copy code**: take the result with you to keep working on it elsewhere.
 - **Run code in the browser**: Python runs client-side via [Pyodide](https://pyodide.org) (Python 3.14 on WebAssembly), so the server never executes user code.
 
 ## How it works
 
 FastAPI serves the pages and two WebSocket channels per session: one for code, one for the rotation (roles, segment timer, who's watching). Redis holds live session state, and the code is flushed to SQLite (SQLModel) every few seconds. The frontend is Jinja templates with htmx and CodeMirror.
 
-Set `ROTATION_SECONDS` in `.env` to change the segment length (default 300).
+Set `ROTATION_SECONDS` in `.env` to change the default segment length (300); the timekeeper can change it per session.
 
 ## Quickstart
 

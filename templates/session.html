@@ -67,6 +67,9 @@
         <button id="format-button" onclick="formatCode()" disabled class="inline-flex items-center gap-2 bg-white ring-1 ring-gray-300 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
           Format <kbd data-keys="Mod-S"></kbd>
         </button>
+        <button id="copy-code" onclick="copyCode()" class="ml-auto inline-flex items-center gap-2 bg-white ring-1 ring-gray-300 hover:ring-indigo-400 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg">
+          📋 <span>Copy code</span>
+        </button>
       </div>
 
       <div id="output" hidden class="m-4 mt-0 rounded-lg overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
@@ -83,7 +86,21 @@
         <p id="segment-label" class="mt-1 text-sm text-gray-600"></p>
         <div class="mt-3 flex flex-wrap gap-2">
           <button id="start-button" onclick="startSegment()" hidden class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">▶ Start segment</button>
+          <button id="pause-button" onclick="sendAs('pause')" hidden class="bg-white ring-1 ring-gray-300 hover:ring-indigo-400 text-gray-700 text-sm font-semibold px-3 py-2 rounded-lg">⏸ Pause</button>
+          <button id="resume-button" onclick="sendAs('resume')" hidden class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">▶ Resume</button>
           <button id="rotate-button" onclick="rotateNow()" hidden class="bg-white ring-1 ring-gray-300 hover:ring-indigo-400 text-gray-700 text-sm font-semibold px-3 py-2 rounded-lg">↻ Rotate now</button>
+        </div>
+        <div class="mt-4 space-y-2 text-sm text-gray-700">
+          <label class="flex items-center justify-between gap-2">
+            <span>Segment length <span class="text-gray-400">minutes</span></span>
+            <input id="length-input" type="number" min="1" max="{{ max_segment_minutes }}" disabled onchange="setLength(this)"
+                   class="w-16 p-1 border border-gray-300 rounded-md text-right disabled:bg-gray-50 disabled:text-gray-500">
+          </label>
+          <label class="flex items-center justify-between gap-2">
+            <span>Keep rotating <span class="text-gray-400">no breaks</span></span>
+            <input id="auto-input" type="checkbox" disabled onchange="sendAs('set_auto', { on: this.checked })">
+          </label>
+          <p id="settings-hint" class="text-xs text-gray-500"></p>
         </div>
       </div>
 
@@ -123,7 +140,6 @@
     let wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
     let ws = new WebSocket(wsProtocol + location.host + "/ws/" + session_id);
     let rotationWS = new WebSocket(wsProtocol + location.host + "/ws/rotation/" + session_id);
-    const rotationSeconds = {{ rotation_seconds }};
 
     // Sending before a socket opens throws and drops the message, e.g. a quick Join
     function send(socket, message) {
@@ -182,11 +198,30 @@
         send(rotationWS, { type: "rotate", username: username });
     }
 
-    async function copyInviteLink() {
-        await navigator.clipboard.writeText(location.href);
-        const text = document.querySelector("#copy-link span");
-        text.textContent = "Copied!";
-        setTimeout(() => (text.textContent = "Copy invite link"), 2000);
+    function sendAs(type, fields = {}) {
+        send(rotationWS, { type: type, username: username, ...fields });
+    }
+
+    function setLength(input) {
+        const minutes = Number(input.value);
+        if (Number.isInteger(minutes) && minutes >= 1 && minutes <= Number(input.max)) {
+            sendAs("set_length", { minutes: minutes });
+        }
+    }
+
+    async function copyToClipboard(buttonId, text, label) {
+        await navigator.clipboard.writeText(text);
+        const span = document.querySelector(`#${buttonId} span`);
+        span.textContent = "Copied!";
+        setTimeout(() => (span.textContent = label), 2000);
+    }
+
+    function copyInviteLink() {
+        copyToClipboard("copy-link", location.href, "Copy invite link");
+    }
+
+    function copyCode() {
+        copyToClipboard("copy-code", editor.getValue(), "Copy code");
     }
 
     function showTab(name) {
@@ -244,8 +279,25 @@
         document.getElementById("readonly-message").textContent = readOnlyMessage();
 
         const timekeeping = rotation.timekeeper === username;
-        document.getElementById("start-button").hidden = deadline !== null || !timekeeping;
+        const paused = rotation.paused !== null;
+        const inRotation = rotation.participants.includes(username);
+        document.getElementById("start-button").hidden = deadline !== null || paused || !timekeeping;
         document.getElementById("rotate-button").hidden = !timekeeping;
+        document.getElementById("pause-button").hidden = deadline === null || !inRotation;
+        document.getElementById("resume-button").hidden = !paused || !inRotation;
+
+        const lengthInput = document.getElementById("length-input");
+        // Don't overwrite what the timekeeper is typing
+        if (document.activeElement !== lengthInput) {
+            lengthInput.value = Math.round(rotation.segment_seconds / 60);
+        }
+        lengthInput.disabled = !timekeeping;
+        const autoInput = document.getElementById("auto-input");
+        autoInput.checked = rotation.auto;
+        autoInput.disabled = !timekeeping;
+        document.getElementById("settings-hint").textContent = timekeeping
+            ? "A new length applies from the next segment."
+            : `${label(rotation.timekeeper)} sets these as timekeeper.`;
         renderClock();
     }
 
@@ -253,14 +305,19 @@
         if (!rotation) return;
         const clock = document.getElementById("time-remaining");
         const segmentLabel = document.getElementById("segment-label");
-        if (deadline === null) {
-            clock.textContent = formatSeconds(rotationSeconds);
+        if (rotation.paused !== null) {
+            clock.textContent = formatSeconds(Math.ceil(rotation.paused));
+            segmentLabel.textContent = "Paused. Anyone in the rotation can resume.";
+        } else if (deadline === null) {
+            clock.textContent = formatSeconds(Math.round(rotation.segment_seconds));
             segmentLabel.textContent = rotation.timekeeper
                 ? `Break: debrief, then ${label(rotation.timekeeper)} starts the next segment.`
                 : "Waiting for people to join the rotation.";
         } else {
             clock.textContent = formatSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-            segmentLabel.textContent = "Segment in progress. Roles rotate when time is up.";
+            segmentLabel.textContent = rotation.auto
+                ? "Segment in progress. Roles rotate and the next segment starts when time is up."
+                : "Segment in progress. Roles rotate when time is up.";
         }
     }
 
