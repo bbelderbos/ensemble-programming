@@ -198,6 +198,12 @@ def test_no_example_when_the_tests_fake_user_input():
     assert runnable(fields).template_code == TEMPLATE
 
 
+def test_no_example_when_the_tests_do_not_parse():
+    fields = bite(template_code=TEMPLATE, tests="def test_a(:\n")["fields"]
+
+    assert runnable(fields).template_code == TEMPLATE
+
+
 def test_existing_main_block_is_left_alone():
     template = TEMPLATE + '\nif __name__ == "__main__":\n    uppercase_vowels("x")\n'
     tests = 'def test_a():\n    assert uppercase_vowels("Hi")\n'

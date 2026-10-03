@@ -286,3 +286,14 @@ def test_rotating_while_paused_clears_the_pause():
 
     assert state["paused"] is None
     assert state["driver"] == "bob"
+
+
+def test_timekeeper_can_turn_keep_rotating_off():
+    with client.websocket_connect("/ws/rotation/s1") as ws:
+        join_all(ws, "ann", "bob")
+        send(ws, type="set_auto", username="bob", on=True)
+        receive_state(ws)
+        send(ws, type="set_auto", username="bob", on=False)
+        state = receive_state(ws)
+
+    assert state["auto"] is False

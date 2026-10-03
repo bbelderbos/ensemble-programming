@@ -18,7 +18,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ty check .
       - run: uv run playwright install --with-deps chromium
-      - run: uv run pytest -q
+      - run: uv run pytest -q --cov
         env:
           DATABASE_URL: "sqlite://"
 
