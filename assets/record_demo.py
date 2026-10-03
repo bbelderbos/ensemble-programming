@@ -6,12 +6,18 @@ import tempfile
 import time
 from pathlib import Path
 
-from playwright.async_api import BrowserContext, Page, Route, async_playwright
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    Route,
+    ViewportSize,
+    async_playwright,
+)
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765"
 OUT = Path(tempfile.mkdtemp(prefix="demo-recording-"))
 VIDEO = Path(__file__).parent.parent / "static" / "demo.mp4"
-SIZE = {"width": 720, "height": 1040}
+SIZE: ViewportSize = {"width": 720, "height": 1040}
 # Must match the ROTATION_SECONDS the app runs with
 DEMO_SEGMENT = 18
 
@@ -289,6 +295,7 @@ async def main() -> None:
         await ctx_a.close()
         await ctx_b.close()
         await browser.close()
+        assert alice.video and bob.video  # recording is on for both contexts
         stitch(Path(await alice.video.path()), Path(await bob.video.path()))
 
 

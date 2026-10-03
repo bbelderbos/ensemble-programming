@@ -1,6 +1,7 @@
 import asyncio
+from typing import cast
 
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from main import ConnectionManager
 
@@ -19,7 +20,7 @@ class FakeSocket:
 def test_a_closed_connection_does_not_stop_the_broadcast():
     manager = ConnectionManager()
     dead, alive = FakeSocket(alive=False), FakeSocket()
-    manager.active_connections["s1"] = [dead, alive]
+    manager.active_connections["s1"] = cast(list[WebSocket], [dead, alive])
 
     asyncio.run(manager.broadcast("s1", "hello"))
 

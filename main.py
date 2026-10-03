@@ -3,7 +3,10 @@ import json
 import math
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
+from typing import cast
 
 import redis
 from decouple import config
@@ -80,13 +83,17 @@ rotation_manager = ConnectionManager()
 # Keeps a reference so running segment timers are not garbage collected
 segment_timers: dict[str, asyncio.Task] = {}
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
-@app.on_event("startup")
-def init_db():
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     SQLModel.metadata.create_all(engine)
+    code_sync = asyncio.create_task(save_code_to_db())
+    yield
+    code_sync.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")
@@ -117,7 +124,7 @@ async def new_session(goal: str = Form(...), challenge: str | None = Form(None))
 @app.get("/session/{session_id}")
 async def session_page(request: Request, session_id: str):
     """Returns the session page with real-time code editor."""
-    slug = redis_client.get(key(session_id, "challenge"))
+    slug = read(session_id, "challenge")
     with Session(engine) as db:
         session_obj = db.get(SessionModel, session_id)
     return templates.TemplateResponse(
@@ -136,7 +143,7 @@ async def session_page(request: Request, session_id: str):
 async def websocket_endpoint(session_id: str, websocket: WebSocket):
     """Handles real-time collaborative editing and typing notifications via WebSockets."""
     await manager.connect(session_id, websocket)
-    if code := redis_client.get(key(session_id, "code")):
+    if code := read(session_id, "code"):
         await websocket.send_text(json.dumps({"type": "code", "content": code}))
 
     try:
@@ -178,28 +185,38 @@ def key(session_id: str, name: str) -> str:
     return f"session:{session_id}:{name}"
 
 
+# redis-py types replies as sync-or-async; this client is sync and decodes to str
+def read(session_id: str, name: str) -> str | None:
+    return cast(str | None, redis_client.get(key(session_id, name)))
+
+
+def get_participants(session_id: str) -> list[str]:
+    return cast(list[str], redis_client.lrange(key(session_id, "participants"), 0, -1))
+
+
 def current_roles(session_id: str) -> Roles:
-    participants = redis_client.lrange(key(session_id, "participants"), 0, -1)
-    segment = int(redis_client.get(key(session_id, "segment")) or 0)
-    return assign_roles(participants, segment)
+    segment = int(read(session_id, "segment") or 0)
+    return assign_roles(get_participants(session_id), segment)
 
 
 def segment_seconds(session_id: str) -> float:
-    seconds = redis_client.get(key(session_id, "segment_seconds"))
+    seconds = read(session_id, "segment_seconds")
     return float(seconds) if seconds else ROTATION_SECONDS
 
 
 def in_rotation(session_id: str, username: str) -> bool:
-    return username in redis_client.lrange(key(session_id, "participants"), 0, -1)
+    return username in get_participants(session_id)
 
 
 def rotation_state(session_id: str) -> dict:
-    ends_at = redis_client.get(key(session_id, "ends_at"))
-    paused = redis_client.get(key(session_id, "paused"))
+    ends_at = read(session_id, "ends_at")
+    paused = read(session_id, "paused")
     return {
         "type": "rotation",
-        "participants": redis_client.lrange(key(session_id, "participants"), 0, -1),
-        "observers": sorted(redis_client.smembers(key(session_id, "observers"))),
+        "participants": get_participants(session_id),
+        "observers": sorted(
+            cast(set[str], redis_client.smembers(key(session_id, "observers")))
+        ),
         **asdict(current_roles(session_id)),
         # None means the team is on a debrief break, or paused
         "remaining": math.ceil(float(ends_at) - time.time()) if ends_at else None,
@@ -237,7 +254,7 @@ async def end_segment_after(session_id: str, seconds: float) -> None:
 
 async def resume_segment(session_id: str) -> None:
     """Re-arm a segment whose timer task was lost, e.g. by a server restart."""
-    ends_at = redis_client.get(key(session_id, "ends_at"))
+    ends_at = read(session_id, "ends_at")
     timer = segment_timers.get(session_id)
     if not ends_at or (timer and not timer.done()):
         return
@@ -270,7 +287,7 @@ def rotate_now(session_id: str, username: str) -> bool:
 
 
 def pause_clock(session_id: str, username: str) -> bool:
-    ends_at = redis_client.get(key(session_id, "ends_at"))
+    ends_at = read(session_id, "ends_at")
     if not ends_at or not in_rotation(session_id, username):
         return False
     if timer := segment_timers.pop(session_id, None):
@@ -281,7 +298,7 @@ def pause_clock(session_id: str, username: str) -> bool:
 
 
 def resume_clock(session_id: str, username: str) -> bool:
-    paused = redis_client.get(key(session_id, "paused"))
+    paused = read(session_id, "paused")
     if not paused or not in_rotation(session_id, username):
         return False
     redis_client.delete(key(session_id, "paused"))
@@ -362,13 +379,11 @@ async def websocket_rotation(session_id: str, websocket: WebSocket):
 
 def leave_rotation(session_id: str, username: str) -> None:
     redis_client.srem(key(session_id, "observers"), username)
-    participants = redis_client.lrange(key(session_id, "participants"), 0, -1)
+    participants = get_participants(session_id)
     if username not in participants:
         return
 
-    driver_seat = int(redis_client.get(key(session_id, "segment")) or 0) % len(
-        participants
-    )
+    driver_seat = int(read(session_id, "segment") or 0) % len(participants)
     leaver_seat = participants.index(username)
     remaining = len(participants) - 1
     # Keep the same driver unless the driver left, then the navigator takes over
@@ -391,7 +406,7 @@ async def save_code_to_db():
             any_updates = False
 
             for session_obj in sessions:
-                latest_code = redis_client.get(f"session:{session_obj.id}:code")
+                latest_code = read(session_obj.id, "code")
 
                 if latest_code and latest_code != session_obj.code:
                     session_obj.code = latest_code
@@ -400,9 +415,3 @@ async def save_code_to_db():
 
             if any_updates:
                 session.commit()
-
-
-@app.on_event("startup")
-async def start_background_tasks():
-    """Start the Redis-to-DB sync process only if storage is available."""
-    asyncio.create_task(save_code_to_db())

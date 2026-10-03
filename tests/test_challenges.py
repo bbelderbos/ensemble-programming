@@ -40,8 +40,14 @@ def test_free_bite_becomes_a_challenge_without_its_solution():
     assert "SECRET" not in challenge.model_dump_json()
 
 
+def runnable(fields: dict) -> Challenge:
+    challenge = to_challenge(fields)
+    assert challenge is not None
+    return challenge
+
+
 def test_module_name_drops_a_py_extension():
-    assert to_challenge(bite(filename="regex.py")["fields"]).module == "regex"
+    assert runnable(bite(filename="regex.py")["fields"]).module == "regex"
 
 
 @pytest.mark.parametrize(
@@ -161,7 +167,7 @@ TEMPLATE = "def uppercase_vowels(text: str) -> str:\n    pass\n"
     ids=["first-literal-call", "skips-calls-with-variables"],
 )
 def test_starter_code_gets_a_runnable_example_from_the_tests(tests, expected_call):
-    template = to_challenge(
+    template = runnable(
         bite(template_code=TEMPLATE, tests=tests)["fields"]
     ).template_code
 
@@ -180,7 +186,7 @@ def test_no_example_when_none_is_safe(template):
     tests = "def test_a(x):\n    assert uppercase_vowels(x)\n    ask()\n"
 
     assert (
-        to_challenge(bite(template_code=template, tests=tests)["fields"]).template_code
+        runnable(bite(template_code=template, tests=tests)["fields"]).template_code
         == template
     )
 
@@ -189,7 +195,7 @@ def test_no_example_when_the_tests_fake_user_input():
     tests = '@patch("builtins.input", side_effect=["red"])\ndef test_a(i):\n    uppercase_vowels()\n'
     fields = bite(template_code=TEMPLATE, tests=tests)["fields"]
 
-    assert to_challenge(fields).template_code == TEMPLATE
+    assert runnable(fields).template_code == TEMPLATE
 
 
 def test_existing_main_block_is_left_alone():
@@ -197,6 +203,6 @@ def test_existing_main_block_is_left_alone():
     tests = 'def test_a():\n    assert uppercase_vowels("Hi")\n'
 
     assert (
-        to_challenge(bite(template_code=template, tests=tests)["fields"]).template_code
+        runnable(bite(template_code=template, tests=tests)["fields"]).template_code
         == template
     )
