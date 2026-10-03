@@ -1,6 +1,6 @@
 # Ensemble Programming
 
-A shared Python editor for mob/ensemble programming: the whole team works on one codebase in real time, in timed segments with rotating roles.
+A shared Python editor for practicing mob/ensemble programming: the whole team solves one problem together in real time, in timed segments with rotating roles.
 
 [![Demo: Alice and Bob solve FizzBuzz together](static/demo.png)](https://ensemble-programming.fly.dev/#demo)
 
