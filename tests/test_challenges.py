@@ -212,3 +212,10 @@ def test_existing_main_block_is_left_alone():
         runnable(bite(template_code=template, tests=tests)["fields"]).template_code
         == template
     )
+
+
+def test_landing_and_session_pages_load_the_usage_tracker(client):
+    url, _ = start(client, goal="x")
+
+    for page in (client.get("/").text, client.get(url).text):
+        assert "https://checkpulse.fly.dev/script.js" in page

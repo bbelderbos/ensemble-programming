@@ -151,12 +151,17 @@
         }
     }
 
+    function track(name) {
+        if (typeof window.checkpulse === "function") window.checkpulse(name);
+    }
+
     function setUsername() {
         // update global username variable
         username = document.getElementById("username-input").value.trim();
         let participate = document.getElementById("rotation-opt-in").checked;
 
         if (username) {
+            track("join");
             document.getElementById("username-modal").style.display = "none";
             send(rotationWS, { type: "join", username: username, participate: participate });
         }
@@ -221,6 +226,7 @@
     }
 
     function copyInviteLink() {
+        track("copy-invite");
         copyToClipboard("copy-link", location.href, "Copy invite link");
     }
 
@@ -534,6 +540,7 @@ def highlight_traceback(text):
         const button = document.getElementById("test-button");
         button.disabled = true;
         showOutput("Running tests…", true, "", "");
+        track("run-tests");
 
         const pyodide = await pyodideReady;
         await pyodide.loadPackage("pytest");
@@ -543,6 +550,7 @@ def highlight_traceback(text):
             .get("run_challenge_tests")(challenge.module, editor.getValue(), challenge.tests)
             .toJs();
         button.disabled = false;
+        if (passed) track("tests-passed");
         showOutput(passed ? `✓ ${summary}` : `✗ ${summary}`, passed, report, "");
     }
 
@@ -550,6 +558,7 @@ def highlight_traceback(text):
         const button = document.getElementById("run-button");
         button.disabled = true;
         showOutput("Running…", true, "", "");
+        track("run-code");
 
         const pyodide = await pyodideReady;
         await pyodide.loadPackagesFromImports(editor.getValue());
